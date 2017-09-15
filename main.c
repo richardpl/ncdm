@@ -613,11 +613,10 @@ int main(int argc, char *argv[])
             item = items;
             for (line = 0; item; line++) {
                 double progress = item->progress;
-                char namestr[1024] = { 0 };
                 char speedstr[128] = { 0 };
                 char progstr[8] = { 0 };
                 int speed = item->speed;
-                char *name = item->outputfilename;
+                char *namestr = item->outputfilename;
                 int j, pos = progress * COLS / 100;
                 int fg = get_fg(item);
                 int bg = get_bg(item);
@@ -630,7 +629,6 @@ int main(int argc, char *argv[])
                 }
 
                 snprintf((char *)&progstr, sizeof(progstr), "%3.2f%%", progress);
-                snprintf((char *)&namestr, sizeof(namestr), "%s", name);
                 snprintf((char *)&speedstr, sizeof(speedstr), "%dKB/s", speed / 1024);
                 namestrlen = strlen(namestr);
                 speedstrlen = strlen(speedstr);
