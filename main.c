@@ -12,6 +12,13 @@ typedef struct DownloadItem {
     int selected;
     int finished;
     int ufinished;
+    char *url;
+    char *primary_ip;
+    long primary_port;
+    long rcode;
+    long protocol;
+    double contentlength;
+    double download_size;
     FILE *outputfile;
     char *outputfilename;
     double progress;
@@ -34,6 +41,7 @@ long int start_time = INT_MIN;
 int nb_ditems = 0;
 int open_urlpos = 0;
 
+WINDOW *infowin   = NULL;
 WINDOW *openwin   = NULL;
 WINDOW *helpwin   = NULL;
 WINDOW *statuswin = NULL;
@@ -114,7 +122,39 @@ static void write_helpwin()
     mvwaddstr(helpwin,  8, 2, " Key p - pause/unpause selected download ");
     mvwaddstr(helpwin,  9, 2, " Key D - delete download from the list ");
     mvwaddstr(helpwin, 10, 2, " Key R - set referer for the selected download ");
+    mvwaddstr(helpwin, 11, 2, " Key i - show extra info for selected download ");
     wnoutrefresh(helpwin);
+}
+
+static void write_infowin(DownloadItem *sitem)
+{
+    if (!sitem)
+        return;
+
+    werase(infowin);
+    wattrset(infowin, COLOR_PAIR(7));
+    mvwprintw(infowin,  0, 0, "Filename: %s", sitem->outputfilename);
+    mvwprintw(infowin,  1, 0, "Effective URL: %s", sitem->url);
+    mvwprintw(infowin,  2, 0, "Response code: %ld", sitem->rcode);
+    mvwprintw(infowin,  3, 0, "Content-length: %f", sitem->contentlength);
+    mvwprintw(infowin,  4, 0, "Download size: %f", sitem->download_size);
+    mvwprintw(infowin,  5, 0, "Primary IP: %s", sitem->primary_ip);
+    mvwprintw(infowin,  6, 0, "Primary port: %ld", sitem->primary_port);
+    mvwprintw(infowin,  7, 0, "Used Protocol: ");
+    switch (sitem->protocol) {
+    case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
+    case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
+    case CURLPROTO_FTP:    waddstr(infowin, "FTP");    break;
+    case CURLPROTO_FTPS:   waddstr(infowin, "FTPS");   break;
+    case CURLPROTO_SCP:    waddstr(infowin, "SCP");    break;
+    case CURLPROTO_SFTP:   waddstr(infowin, "SFTP");   break;
+    case CURLPROTO_FILE:   waddstr(infowin, "FILE");   break;
+    case CURLPROTO_TFTP:   waddstr(infowin, "TFTP");   break;
+    case CURLPROTO_TELNET: waddstr(infowin, "TELNET"); break;
+    default:               waddstr(infowin, "unknown");
+    }
+
+    wnoutrefresh(infowin);
 }
 
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *ourptr)
@@ -201,6 +241,8 @@ static void uninit()
 
     wrefresh(openwin);
     delwin(openwin);
+    wrefresh(infowin);
+    delwin(infowin);
     wrefresh(helpwin);
     delwin(helpwin);
     wrefresh(statuswin);
@@ -421,6 +463,11 @@ static void init_windows(int downloading)
         error(-1, "Failed to create help window.\n");
     }
 
+    infowin = newwin(LINES-1, COLS, 0, 0);
+    if (!infowin) {
+        error(-1, "Failed to create info window.\n");
+    }
+
     openwin = newwin(1, COLS, LINES/2, 0);
     if (!openwin) {
         error(-1, "Failed to create open window.\n");
@@ -436,6 +483,7 @@ static void init_windows(int downloading)
 
     keypad(downloads,  TRUE);
     leaveok(downloads, TRUE);
+    leaveok(infowin,   TRUE);
     leaveok(openwin,   TRUE);
 }
 
@@ -443,7 +491,8 @@ int main(int argc, char *argv[])
 {
     DownloadItem *sitem = NULL;
     int downloading = 0, help_active = 0, overwrite = 0;
-    int open_active = 0, referer_active = 0, need_refresh = 0;
+    int open_active = 0, referer_active = 0, info_active = 0;
+    int need_refresh = 0;
     long max_total_connections = 0;
     int i;
 
@@ -549,6 +598,18 @@ int main(int argc, char *argv[])
 
             if (c == KEY_F(1)) {
                 help_active = !help_active;
+                need_refresh = 1;
+            } else if (c == 'i') {
+                info_active = !info_active;
+                if (info_active && sitem) {
+                    curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->url);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_IP, &sitem->primary_ip);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_PORT, &sitem->primary_port);
+                }
                 need_refresh = 1;
             } else if (c == 'A' || c == 'a') {
                 if (c == 'A')
@@ -679,6 +740,7 @@ int main(int argc, char *argv[])
                 }
             } else if (c == KEY_RESIZE) {
                 delwin(openwin);
+                delwin(infowin);
                 delwin(helpwin);
                 delwin(statuswin);
                 delwin(downloads);
@@ -719,6 +781,9 @@ int main(int argc, char *argv[])
 
             if (help_active)
                 write_helpwin();
+
+            if (info_active)
+                write_infowin(sitem);
 
             doupdate();
             need_refresh = 0;
