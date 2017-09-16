@@ -88,11 +88,17 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
     return ditem;
 }
 
-static void write_status(int color, const char *string)
+static void write_status(int color, const char *fmt, ...)
 {
+    va_list vl;
+
     werase(statuswin);
     wattrset(statuswin, color);
-    waddstr(statuswin, string);
+
+    va_start(vl, fmt);
+    vwprintw(statuswin, fmt, vl);
+    va_end(vl);
+
     wnoutrefresh(statuswin);
 }
 
@@ -286,7 +292,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
     if (!outputfile)
         item->outputfile = outputfile = fopen(ofilename, "wb");
     if (!outputfile) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file");
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", ofilename);
         delete_ditem(item);
         return 1;
     }
