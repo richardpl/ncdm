@@ -513,6 +513,9 @@ int main(int argc, char *argv[])
     noecho();
     curs_set(0);
 
+    mousemask(ALL_MOUSE_EVENTS, NULL);
+    mouseinterval(0);
+
     init_windows(downloading);
 
     if (has_colors()) {
@@ -753,6 +756,22 @@ int main(int argc, char *argv[])
                 open_active = 0;
                 referer_active = 0;
                 need_refresh = 1;
+            } else if (c == KEY_MOUSE) {
+                MEVENT mouse_event;
+                int y;
+
+                if (getmouse(&mouse_event) == OK) {
+                    if (sitem)
+                        sitem->selected = 0;
+                    sitem = items;
+                    for (y = 0; sitem->next; y++) {
+                        if (y == mouse_event.y)
+                            break;
+                        sitem = sitem->next;
+                    }
+                    sitem->selected = 1;
+                    need_refresh = 1;
+                }
             }
         }
 
