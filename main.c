@@ -778,11 +778,11 @@ int main(int argc, char *argv[])
             write_downloads();
             write_statuswin(downloading);
 
-            if (help_active)
-                write_helpwin();
-
             if (info_active)
                 write_infowin(sitem);
+
+            if (help_active)
+                write_helpwin();
 
             doupdate();
             need_refresh = 0;
