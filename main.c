@@ -179,7 +179,7 @@ static int get_bg(DownloadItem *ditem)
     }
 }
 
-static void finish(int sig)
+static void uninit()
 {
     DownloadItem *item = items;
 
@@ -202,14 +202,28 @@ static void finish(int sig)
     prefresh(downloads, 0, 0, 0, 0, 0, 0);
     delwin(downloads);
     refresh();
-    clear();
     endwin();
     curl_multi_cleanup(mhandle);
+    mhandle = NULL;
     curl_global_cleanup();
     free(items);
     items = NULL;
     free(url);
     url = NULL;
+}
+
+static void error(int sig, const char *error_msg)
+{
+    uninit();
+
+    fprintf(stderr, "%s", error_msg);
+
+    exit(sig);
+}
+
+static void finish(int sig)
+{
+    uninit();
 
     exit(sig);
 }
@@ -384,6 +398,41 @@ static void add_handle(DownloadItem *ditem)
     curl_multi_add_handle(mhandle, ditem->handle);
 }
 
+static void init_windows(int downloading)
+{
+    downloads = newpad(4096, COLS);
+    if (!downloads) {
+        error(-1, "Failed to create downloads window.\n");
+    }
+
+    statuswin = newwin(1, COLS, LINES-1, 0);
+    if (!statuswin) {
+        error(-1, "Failed to create status window.\n");
+    }
+
+    helpwin = newwin(LINES-1, COLS, 0, 0);
+    if (!statuswin) {
+        error(-1, "Failed to create help window.\n");
+    }
+
+    openwin = newwin(1, COLS, LINES/2, 0);
+    if (!openwin) {
+        error(-1, "Failed to create open window.\n");
+    }
+
+    if (downloading) {
+        wtimeout(downloads, 0);
+        wtimeout(openwin, 0);
+    } else {
+        wtimeout(downloads, -1);
+        wtimeout(openwin, -1);
+    }
+
+    keypad(downloads,  TRUE);
+    leaveok(downloads, TRUE);
+    leaveok(openwin,   TRUE);
+}
+
 int main(int argc, char *argv[])
 {
     DownloadItem *sitem = NULL;
@@ -396,14 +445,12 @@ int main(int argc, char *argv[])
 
     url = calloc(MAX_URL_LEN, sizeof(*url));
     if (!url) {
-        fprintf(stderr, "Failed to allocate url storage.\n");
-        finish(-1);
+        error(-1, "Failed to allocate url storage.\n");
     }
 
     mhandle = curl_multi_init();
     if (!mhandle) {
-        fprintf(stderr, "Failed to create curl multi handle.\n");
-        finish(-1);
+        error(-1, "Failed to create curl multi handle.\n");
     }
 
     initscr();
@@ -412,36 +459,7 @@ int main(int argc, char *argv[])
     noecho();
     curs_set(0);
 
-    downloads = newpad(4096, COLS);
-    if (!downloads) {
-        fprintf(stderr, "Failed to create pad window.\n");
-        finish(-1);
-    }
-    keypad(downloads, TRUE);
-
-    statuswin = newwin(1, COLS, LINES-1, 0);
-    if (!statuswin) {
-        fprintf(stderr, "Failed to create status window.\n");
-        finish(-1);
-    }
-
-    helpwin = newwin(LINES-1, COLS, 0, 0);
-    if (!statuswin) {
-        fprintf(stderr, "Failed to create help window.\n");
-        finish(-1);
-    }
-
-    openwin = newwin(1, COLS, LINES/2, 0);
-    if (!openwin) {
-        fprintf(stderr, "Failed to create open window.\n");
-        finish(-1);
-    }
-
-    wtimeout(downloads, -1);
-    wtimeout(openwin, -1);
-
-    leaveok(downloads, 1);
-    leaveok(openwin, 0);
+    init_windows(downloading);
 
     if (has_colors()) {
         start_color();
@@ -662,41 +680,7 @@ int main(int argc, char *argv[])
                 refresh();
                 endwin();
 
-                downloads = newpad(4096, COLS);
-                if (!downloads) {
-                    fprintf(stderr, "Failed to create pad window.\n");
-                    finish(-1);
-                }
-
-                keypad(downloads, TRUE);
-                leaveok(downloads, 1);
-
-                helpwin = newwin(LINES-1, COLS, 0, 0);
-                if (!helpwin) {
-                    fprintf(stderr, "Failed to create help window.\n");
-                    finish(-1);
-                }
-
-                statuswin = newwin(1, COLS, LINES-1, 0);
-                if (!statuswin) {
-                    fprintf(stderr, "Failed to create status window.\n");
-                    finish(-1);
-                }
-
-                openwin = newwin(1, COLS, LINES/2, 0);
-                if (!openwin) {
-                    fprintf(stderr, "Failed to create open window.\n");
-                    finish(-1);
-                }
-                if (downloading) {
-                    wtimeout(downloads, 0);
-                    wtimeout(openwin, 0);
-                } else {
-                    wtimeout(downloads, -1);
-                    wtimeout(openwin, -1);
-                }
-
-                leaveok(openwin, 0);
+                init_windows(downloading);
 
                 help_active = 0;
                 open_active = 0;
