@@ -214,7 +214,7 @@ static void finish(int sig)
     exit(sig);
 }
 
-static int create_handle(int *open_active, int overwrite, const char *newurl)
+static int create_handle(int overwrite, const char *newurl, const char *referer)
 {
     DownloadItem *item;
     FILE *outputfile = NULL;
@@ -226,7 +226,6 @@ static int create_handle(int *open_active, int overwrite, const char *newurl)
     urllen = strlen(newurl);
     if (urllen <= 1) {
         werase(openwin);
-        *open_active = 0;
         return 1;
     }
 
@@ -294,6 +293,8 @@ static int create_handle(int *open_active, int overwrite, const char *newurl)
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, outputfile);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
+    if (referer)
+        curl_easy_setopt(handle, CURLOPT_REFERER, referer);
 
     if (!overwrite) {
         curl_off_t from;
@@ -312,6 +313,62 @@ static int create_handle(int *open_active, int overwrite, const char *newurl)
     return 0;
 }
 
+static void write_downloads(int downloading)
+{
+    DownloadItem *item = items;
+    int line, cline = -1;
+
+    item = items;
+    for (line = 0; item; line++) {
+        double progress = item->progress;
+        char speedstr[128] = { 0 };
+        char progstr[8] = { 0 };
+        int speed = item->speed;
+        char *namestr = item->outputfilename;
+        int j, pos = progress * COLS / 100;
+        int fg = get_fg(item);
+        int bg = get_bg(item);
+        int namestrlen, k, l;
+        int speedstrlen;
+        int progstrlen;
+
+        if (item->selected) {
+            cline = line;
+        }
+
+        snprintf((char *)&progstr, sizeof(progstr), "%3.2f%%", progress);
+        snprintf((char *)&speedstr, sizeof(speedstr), "%dKB/s", speed / 1024);
+        namestrlen = strlen(namestr);
+        speedstrlen = strlen(speedstr);
+        progstrlen = strlen(progstr);
+        for (j = 0, k = 0, l = 0; j < COLS; j++) {
+            if (j < pos)
+                wattrset(downloads, fg);
+            else
+                wattrset(downloads, bg);
+            if (j < namestrlen)
+                mvwaddch(downloads, line, j, namestr[j]);
+            else if (j >= COLS/2 && l < speedstrlen)
+                mvwaddch(downloads, line, j, speedstr[l++]);
+            else if (j >= COLS - progstrlen && k < progstrlen)
+                mvwaddch(downloads, line, j, progstr[k++]);
+            else
+                mvwaddch(downloads, line, j, ' ');
+        }
+
+        item = item->next;
+    }
+
+    pnoutrefresh(downloads, MAX(cline - (LINES - 2), 0), 0, 0, 0, LINES-1, COLS);
+
+    if (start_time != INT_MIN && downloading) {
+        werase(statuswin);
+        wattrset(statuswin, COLOR_PAIR(7));
+        wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
+        wnoutrefresh(statuswin);
+    }
+}
+
 static void add_handle(DownloadItem *ditem)
 {
     curl_off_t from;
@@ -328,6 +385,7 @@ int main(int argc, char *argv[])
     DownloadItem *sitem = NULL;
     int downloading = 0, help_active = 0, overwrite = 0;
     int open_active = 0, referer_active = 0, need_refresh = 0;
+    int i;
 
     signal(SIGINT, finish);
 
@@ -392,6 +450,20 @@ int main(int argc, char *argv[])
         init_pair(7, COLOR_WHITE,   COLOR_BLACK);
     }
 
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-R") && argc >= i+3) {
+            create_handle(0, argv[i+2], argv[i+1]);
+            i+=2;
+        } else {
+            create_handle(0, argv[i], NULL);
+        }
+    }
+
+    if (i > 1) {
+        write_downloads(downloading);
+        doupdate();
+    }
+
     for (;;) {
         int c;
 
@@ -406,8 +478,9 @@ int main(int argc, char *argv[])
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (open_active && create_handle(&open_active, overwrite, url)) {
+                if (open_active && create_handle(overwrite, url, NULL)) {
                     open_active = 0;
+                    need_refresh = 1;
                     continue;
                 } else if (referer_active) {
                     curl_easy_setopt(sitem->handle, CURLOPT_REFERER, url);
@@ -434,7 +507,7 @@ int main(int argc, char *argv[])
             }
             mvwaddstr(openwin, skip_y, skip_x, url + MAX((signed)strlen(url) + skip_x - COLS, 0));
             mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(url), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
-        } else if (!open_active) {
+        } else if (!open_active && !referer_active) {
             c = wgetch(downloads);
 
             if (c == KEY_F(1)) {
@@ -614,6 +687,7 @@ int main(int argc, char *argv[])
 
                 help_active = 0;
                 open_active = 0;
+                referer_active = 0;
                 need_refresh = 1;
             }
         }
@@ -637,58 +711,7 @@ int main(int argc, char *argv[])
         }
 
         if (need_refresh) {
-            DownloadItem *item = items;
-            int line, cline = -1;
-
-            item = items;
-            for (line = 0; item; line++) {
-                double progress = item->progress;
-                char speedstr[128] = { 0 };
-                char progstr[8] = { 0 };
-                int speed = item->speed;
-                char *namestr = item->outputfilename;
-                int j, pos = progress * COLS / 100;
-                int fg = get_fg(item);
-                int bg = get_bg(item);
-                int namestrlen, k, l;
-                int speedstrlen;
-                int progstrlen;
-
-                if (item->selected) {
-                    cline = line;
-                }
-
-                snprintf((char *)&progstr, sizeof(progstr), "%3.2f%%", progress);
-                snprintf((char *)&speedstr, sizeof(speedstr), "%dKB/s", speed / 1024);
-                namestrlen = strlen(namestr);
-                speedstrlen = strlen(speedstr);
-                progstrlen = strlen(progstr);
-                for (j = 0, k = 0, l = 0; j < COLS; j++) {
-                    if (j < pos)
-                        wattrset(downloads, fg);
-                    else
-                        wattrset(downloads, bg);
-                    if (j < namestrlen)
-                        mvwaddch(downloads, line, j, namestr[j]);
-                    else if (j >= COLS/2 && l < speedstrlen)
-                        mvwaddch(downloads, line, j, speedstr[l++]);
-                    else if (j >= COLS - progstrlen && k < progstrlen)
-                        mvwaddch(downloads, line, j, progstr[k++]);
-                    else
-                        mvwaddch(downloads, line, j, ' ');
-                }
-
-                item = item->next;
-            }
-
-            pnoutrefresh(downloads, MAX(cline - (LINES - 2), 0), 0, 0, 0, LINES-1, COLS);
-
-            if (start_time != INT_MIN && downloading) {
-                werase(statuswin);
-                wattrset(statuswin, COLOR_PAIR(7));
-                wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
-                wnoutrefresh(statuswin);
-            }
+            write_downloads(downloading);
 
             if (help_active) {
                 write_help();
