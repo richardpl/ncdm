@@ -214,7 +214,7 @@ static void finish(int sig)
     exit(sig);
 }
 
-static int create_handle(int *open_active, int overwrite)
+static int create_handle(int *open_active, int overwrite, const char *newurl)
 {
     DownloadItem *item;
     FILE *outputfile = NULL;
@@ -223,7 +223,7 @@ static int create_handle(int *open_active, int overwrite)
     int urllen, i;
 
     open_urlpos = 0;
-    urllen = strlen(url);
+    urllen = strlen(newurl);
     if (urllen <= 1) {
         werase(openwin);
         *open_active = 0;
@@ -231,7 +231,7 @@ static int create_handle(int *open_active, int overwrite)
     }
 
     for (i = urllen - 1; i >= 0; i--) {
-        if (url[i] == '/')
+        if (newurl[i] == '/')
             break;
     }
 
@@ -264,7 +264,7 @@ static int create_handle(int *open_active, int overwrite)
         item->prev = prev;
     }
 
-    ofilename = &url[i+1];
+    ofilename = (char *)&newurl[i+1];
     if (!ofilename) {
         finish(-1);
     }
@@ -288,7 +288,7 @@ static int create_handle(int *open_active, int overwrite)
         finish(-1);
     memcpy(ofilenamecopy, ofilename, strlen(ofilename));
 
-    curl_easy_setopt(handle, CURLOPT_URL, url);
+    curl_easy_setopt(handle, CURLOPT_URL, newurl);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, item);
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
@@ -406,7 +406,7 @@ int main(int argc, char *argv[])
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (open_active && create_handle(&open_active, overwrite)) {
+                if (open_active && create_handle(&open_active, overwrite, url)) {
                     open_active = 0;
                     continue;
                 } else if (referer_active) {
