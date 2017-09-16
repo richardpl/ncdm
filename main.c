@@ -389,6 +389,7 @@ int main(int argc, char *argv[])
     DownloadItem *sitem = NULL;
     int downloading = 0, help_active = 0, overwrite = 0;
     int open_active = 0, referer_active = 0, need_refresh = 0;
+    long max_total_connections = 0;
     int i;
 
     signal(SIGINT, finish);
@@ -458,10 +459,15 @@ int main(int argc, char *argv[])
         if (!strcmp(argv[i], "-R") && argc >= i+3) {
             create_handle(0, argv[i+2], argv[i+1]);
             i+=2;
+        } else if (!strcmp(argv[i], "-M") && argc >= i+2) {
+            max_total_connections = atol(argv[i+1]);
+            i+=1;
         } else {
             create_handle(0, argv[i], NULL);
         }
     }
+
+    curl_multi_setopt(mhandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, max_total_connections);
 
     if (i > 1)
         write_downloads();
