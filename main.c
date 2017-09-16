@@ -45,10 +45,9 @@ WINDOW *downloads = NULL;
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
     if (ditem->handle) {
-        if (!ditem->inactive && ditem->handle)
+        if (!ditem->inactive)
             curl_multi_remove_handle(mhandle, ditem->handle);
-        if (ditem->handle)
-            curl_easy_cleanup(ditem->handle);
+        curl_easy_cleanup(ditem->handle);
     }
 
     if (ditem->outputfile)
