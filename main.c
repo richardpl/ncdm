@@ -39,8 +39,8 @@ WINDOW *helpwin   = NULL;
 WINDOW *statuswin = NULL;
 WINDOW *downloads = NULL;
 
-#define MAX(a, b) (a > b ? a : b)
-#define MIN(a, b) (a < b ? a : b)
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
@@ -396,10 +396,13 @@ int main(int argc, char *argv[])
         int c;
 
         if (open_active || referer_active) {
+            int skip_y, skip_x;
+
             if (open_active)
                 mvwaddstr(openwin, 0, 0, "Enter URL: ");
             else
                 mvwaddstr(openwin, 0, 0, "Enter referer: ");
+            getyx(openwin, skip_y, skip_x);
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
@@ -429,8 +432,8 @@ int main(int argc, char *argv[])
                 }
                 need_refresh = 1;
             }
-            mvwaddstr(openwin, 0, 11 + 4 * referer_active, url);
-            mvwchgat(openwin, 0, 11 + 4 * referer_active + strlen(url), 1, A_BLINK | A_REVERSE, 2, NULL);
+            mvwaddstr(openwin, skip_y, skip_x, url + MAX((signed)strlen(url) + skip_x - COLS, 0));
+            mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(url), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
         } else if (!open_active) {
             c = wgetch(downloads);
 
