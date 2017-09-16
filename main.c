@@ -96,7 +96,7 @@ static void write_status(int color, const char *string)
     wnoutrefresh(statuswin);
 }
 
-static void write_help()
+static void write_helpwin()
 {
     wattrset(helpwin, COLOR_PAIR(5));
     mvwaddstr(helpwin,  2, 2, " Key a - add new download URL, downloading from last position ");
@@ -313,7 +313,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
     return 0;
 }
 
-static void write_downloads(int downloading)
+static void write_downloads()
 {
     DownloadItem *item = items;
     int line, cline = -1;
@@ -360,7 +360,10 @@ static void write_downloads(int downloading)
     }
 
     pnoutrefresh(downloads, MAX(cline - (LINES - 2), 0), 0, 0, 0, LINES-1, COLS);
+}
 
+static void write_statuswin(int downloading)
+{
     if (start_time != INT_MIN && downloading) {
         werase(statuswin);
         wattrset(statuswin, COLOR_PAIR(7));
@@ -460,10 +463,11 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (i > 1) {
-        write_downloads(downloading);
-        doupdate();
-    }
+    if (i > 1)
+        write_downloads();
+
+    write_statuswin(downloading);
+    doupdate();
 
     for (;;) {
         int c;
@@ -712,11 +716,11 @@ int main(int argc, char *argv[])
         }
 
         if (need_refresh) {
-            write_downloads(downloading);
+            write_downloads();
+            write_statuswin(downloading);
 
-            if (help_active) {
-                write_help();
-            }
+            if (help_active)
+                write_helpwin();
 
             doupdate();
             need_refresh = 0;
