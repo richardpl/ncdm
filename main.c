@@ -365,8 +365,9 @@ static void write_downloads(int downloading)
         werase(statuswin);
         wattrset(statuswin, COLOR_PAIR(7));
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
-        wnoutrefresh(statuswin);
     }
+    mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
+    wnoutrefresh(statuswin);
 }
 
 static void add_handle(DownloadItem *ditem)
