@@ -88,11 +88,11 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
     return ditem;
 }
 
-static void write_status(const char *statusstr, int color)
+static void write_status(int color, const char *string)
 {
     werase(statuswin);
     wattrset(statuswin, color);
-    waddstr(statuswin, statusstr);
+    waddstr(statuswin, string);
     wnoutrefresh(statuswin);
 }
 
@@ -238,7 +238,7 @@ static int create_handle(int *open_active, int overwrite)
     if (items == NULL) {
         items = calloc(1, sizeof(DownloadItem));
         if (!items) {
-            write_status("Failed to allocate DownloadItem", A_REVERSE | COLOR_PAIR(1));
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate DownloadItem");
             return 1;
         }
         item = items;
@@ -255,7 +255,7 @@ static int create_handle(int *open_active, int overwrite)
 
         item->next = calloc(1, sizeof(DownloadItem));
         if (!item->next) {
-            write_status("Failed to allocate DownloadItem", A_REVERSE | COLOR_PAIR(1));
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate DownloadItem");
             return 1;
         }
 
@@ -273,13 +273,13 @@ static int create_handle(int *open_active, int overwrite)
     if (!outputfile)
         item->outputfile = outputfile = fopen(ofilename, "wb");
     if (!outputfile) {
-        write_status("Failed to open file", A_REVERSE | COLOR_PAIR(1));
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file");
         delete_ditem(item);
         return 1;
     }
     item->handle = handle = curl_easy_init();
     if (!handle) {
-        write_status("Failed to create curl easy handle", A_REVERSE | COLOR_PAIR(1));
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to create curl easy handle");
         delete_ditem(item);
         return 1;
     }
@@ -302,7 +302,7 @@ static int create_handle(int *open_active, int overwrite)
         curl_easy_setopt(handle, CURLOPT_RESUME_FROM_LARGE, from);
     }
     if (start_all && curl_multi_add_handle(mhandle, handle) != CURLM_OK) {
-        write_status("Failed to add curl easy handle", A_REVERSE | COLOR_PAIR(1));
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to add curl easy handle");
         delete_ditem(item);
         return 1;
     }
@@ -684,14 +684,16 @@ int main(int argc, char *argv[])
             pnoutrefresh(downloads, MAX(cline - (LINES - 2), 0), 0, 0, 0, LINES-1, COLS);
 
             if (start_time != INT_MIN && downloading) {
-                char statusstr[256] = { 0 };
-                snprintf((char *)&statusstr, sizeof(statusstr), "seconds elapsed: %ld", time(NULL) - start_time);
-                write_status((const char *)&statusstr, COLOR_PAIR(7));
+                werase(statuswin);
+                wattrset(statuswin, COLOR_PAIR(7));
+                wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
+                wnoutrefresh(statuswin);
             }
 
             if (help_active) {
                 write_help();
             }
+
             doupdate();
             need_refresh = 0;
         }
