@@ -402,7 +402,7 @@ int main(int argc, char *argv[])
 
     mhandle = curl_multi_init();
     if (!mhandle) {
-        fprintf(stderr, "Failed to create pad window.\n");
+        fprintf(stderr, "Failed to create curl multi handle.\n");
         finish(-1);
     }
 
