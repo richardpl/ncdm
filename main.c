@@ -384,9 +384,9 @@ static void write_downloads()
 
 static void write_statuswin(int downloading)
 {
+    wattrset(statuswin, COLOR_PAIR(7));
     if (start_time != INT_MIN && downloading) {
         werase(statuswin);
-        wattrset(statuswin, COLOR_PAIR(7));
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
     }
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
