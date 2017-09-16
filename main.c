@@ -62,6 +62,7 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         ditem->next = old->next;
         old->next->prev = ditem;
         ditem->next->selected = 1;
+        ditem = ditem->next;
         free(old);
     } else if (ditem->next) {
         DownloadItem *old;
