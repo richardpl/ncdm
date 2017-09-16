@@ -485,7 +485,9 @@ int main(int argc, char *argv[])
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
                 if (open_active && create_handle(overwrite, url, NULL)) {
                     open_active = 0;
-                    need_refresh = 1;
+                    werase(openwin);
+                    wnoutrefresh(openwin);
+                    doupdate();
                     continue;
                 } else if (referer_active) {
                     curl_easy_setopt(sitem->handle, CURLOPT_REFERER, url);
