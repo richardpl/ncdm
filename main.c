@@ -102,7 +102,7 @@ static void write_help()
     mvwaddstr(helpwin,  2, 2, " Key a - add new download URL, downloading from last position ");
     mvwaddstr(helpwin,  3, 2, " Key A - add new download URL, downloading from beginning ");
     mvwaddstr(helpwin,  4, 2, " Key Q - quit ");
-    mvwaddstr(helpwin,  5, 2, " Key S - start downloads ");
+    mvwaddstr(helpwin,  5, 2, " Key S - start/stop all downloads ");
     mvwaddstr(helpwin,  6, 2, " Key H - halt selected download ");
     mvwaddstr(helpwin,  7, 2, " Key h - unhalt selected download ");
     mvwaddstr(helpwin,  8, 2, " Key p - pause/unpause selected download ");
@@ -312,6 +312,17 @@ static int create_handle(int *open_active, int overwrite)
     return 0;
 }
 
+static void add_handle(DownloadItem *ditem)
+{
+    curl_off_t from;
+
+    fseek(ditem->outputfile, 0, SEEK_END);
+    from = ditem->downloaded = ftell(ditem->outputfile);
+    curl_easy_setopt(ditem->handle, CURLOPT_RESUME_FROM_LARGE, from);
+    ditem->start_time = time(NULL);
+    curl_multi_add_handle(mhandle, ditem->handle);
+}
+
 int main(int argc, char *argv[])
 {
     DownloadItem *sitem = NULL;
@@ -440,11 +451,30 @@ int main(int argc, char *argv[])
                 finish(0);
             } else if (c == 'S') {
                 downloading = !downloading;
-                if (downloading) {
+                if (downloading && items) {
+                    DownloadItem *item = items;
+
+                    for (;item;) {
+                        if (item->paused && !item->inactive && !item->finished) {
+                            add_handle(item);
+                            item->paused = 0;
+                        }
+                        item = item->next;
+                    }
+
                     start_time = time(NULL);
                     wtimeout(downloads, 0);
                     wtimeout(openwin, 0);
-                } else {
+                } else if (items) {
+                    DownloadItem *item = items;
+                    for (;item;) {
+                        if (!item->paused && !item->inactive && !item->finished) {
+                            item->paused = 1;
+                            curl_multi_remove_handle(mhandle, item->handle);
+                        }
+                        item = item->next;
+                    }
+
                     wtimeout(downloads, -1);
                     wtimeout(openwin, -1);
                 }
@@ -452,6 +482,7 @@ int main(int argc, char *argv[])
                 if (sitem && sitem->inactive) {
                     sitem->inactive = 0;
                     fseek(sitem->outputfile, sitem->downloaded, SEEK_SET);
+                    curl_easy_setopt(sitem->handle, CURLOPT_RESUME_FROM_LARGE, ftell(sitem->outputfile));
                     curl_multi_add_handle(mhandle, sitem->handle);
                     need_refresh = 1;
                 }
@@ -472,22 +503,18 @@ int main(int argc, char *argv[])
             } else if (c == 'H') {
                 if (sitem && !sitem->inactive) {
                     sitem->inactive = 1;
+                    sitem->finished = 0;
                     curl_multi_remove_handle(mhandle, sitem->handle);
                     need_refresh = 1;
                 }
             } else if (c == 'p') {
                 if (sitem && !sitem->inactive) {
+                    if (!sitem->paused)
+                        curl_multi_remove_handle(mhandle, sitem->handle);
                     sitem->paused = !sitem->paused;
-                    curl_multi_remove_handle(mhandle, sitem->handle);
                     if (!sitem->paused) {
-                        curl_off_t from;
-
-                        fseek(sitem->outputfile, 0, SEEK_END);
-                        from = sitem->downloaded = ftell(sitem->outputfile);
-                        curl_easy_setopt(sitem->handle, CURLOPT_RESUME_FROM_LARGE, from);
-                        curl_multi_add_handle(mhandle, sitem->handle);
+                        add_handle(sitem);
                         downloading = 1;
-                        sitem->start_time = time(NULL);
                         if (start_time == INT_MIN)
                             start_time = sitem->start_time;
                         wtimeout(downloads, 0);
