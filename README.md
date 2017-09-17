@@ -36,6 +36,10 @@ Optional switches:
              Setting this to 0, will use new connection for each new download.
              Set this to 1 if you want to download up to one item at same time.
 
+-o file    - This one set output file, not overwritting it if it exist.
+
+-O file    - Similar as above but with overwritting.
+
 Building
 --------
 

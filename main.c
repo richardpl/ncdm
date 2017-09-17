@@ -540,6 +540,47 @@ static void init_windows(int downloading)
     leaveok(openwin,   TRUE);
 }
 
+static int parse_parameters(int argc, char *argv[],
+                            long *max_total_connections)
+{
+    const char *referer = NULL;
+    const char *output = NULL;
+    long max = 0;
+    int overwrite = 0;
+    int i, param = 0;
+
+    for (i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-R")) {
+            param = 1;
+        } else if (!strcmp(argv[i], "-o")) {
+            param = 2;
+            overwrite = 0;
+        } else if (!strcmp(argv[i], "-M")) {
+            param = 3;
+        } else if (!strcmp(argv[i], "-O")) {
+            param = 4;
+            overwrite = 1;
+        } else {
+            if (param == 1) {
+                referer = argv[i];
+            } else if (param == 2 || param == 4) {
+                output = argv[i];
+            } else if (param == 3) {
+                max = atol(argv[i]);
+            } else {
+                create_handle(overwrite, argv[i], referer, output);
+                referer = output = NULL;
+                overwrite = 0;
+            }
+            param = 0;
+        }
+    }
+
+    *max_total_connections = max;
+
+    return i;
+}
+
 int main(int argc, char *argv[])
 {
     DownloadItem *sitem = NULL;
@@ -547,7 +588,6 @@ int main(int argc, char *argv[])
     int open_active = 0, referer_active = 0, info_active = 0;
     int need_refresh = 0;
     long max_total_connections = 0;
-    int i;
 
     signal(SIGINT, finish);
 
@@ -584,25 +624,11 @@ int main(int argc, char *argv[])
         init_pair(7, COLOR_WHITE,   COLOR_BLACK);
     }
 
-    for (i = 1; i < argc; i++) {
-        if (!strcmp(argv[i], "-R") && argc >= i+3) {
-            create_handle(0, argv[i+2], argv[i+1], NULL);
-            i+=2;
-        } else if (!strcmp(argv[i], "-O") && argc >= i+3) {
-            create_handle(0, argv[i+2], NULL, argv[i+1]);
-            i+=2;
-        } else if (!strcmp(argv[i], "-M") && argc >= i+2) {
-            max_total_connections = atol(argv[i+1]);
-            i+=1;
-        } else {
-            create_handle(0, argv[i], NULL, NULL);
-        }
-    }
+
+    if (parse_parameters(argc, argv, &max_total_connections))
+        write_downloads();
 
     curl_multi_setopt(mhandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, max_total_connections);
-
-    if (i > 1)
-        write_downloads();
 
     write_statuswin(downloading);
     doupdate();
