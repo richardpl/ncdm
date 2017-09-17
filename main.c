@@ -3,6 +3,7 @@
 #include <curses.h>
 #include <math.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
