@@ -295,7 +295,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
 {
     DownloadItem *item;
     FILE *outputfile = NULL;
-    char *ofilename, *ofilenamecopy;
+    char *ofilename;
     CURL *handle;
     int urllen, i;
 
@@ -374,10 +374,12 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
         delete_ditem(item);
         return 1;
     }
-    item->outputfilename = ofilenamecopy = calloc(strlen(ofilename) + 1, 1);
-    if (!ofilenamecopy)
-        finish(-1);
-    memcpy(ofilenamecopy, ofilename, strlen(ofilename));
+    item->outputfilename = strdup(ofilename);
+    if (!item->outputfilename) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
+        delete_ditem(item);
+        return 1;
+    }
 
     curl_easy_setopt(handle, CURLOPT_URL, newurl);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
