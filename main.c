@@ -141,13 +141,14 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin,  0, 0, " Filename: %s ", sitem->outputfilename);
     mvwprintw(infowin,  1, 0, " URL: %s ", sitem->url);
     mvwprintw(infowin,  2, 0, " Effective URL: %s ", sitem->effective_url);
-    mvwprintw(infowin,  3, 0, " Max download speed: %ldB/s ", sitem->max_speed);
-    mvwprintw(infowin,  4, 0, " Response code: %ld ", sitem->rcode);
-    mvwprintw(infowin,  5, 0, " Content-length: %f ", sitem->contentlength);
-    mvwprintw(infowin,  6, 0, " Download size: %f ", sitem->download_size);
-    mvwprintw(infowin,  7, 0, " Primary IP: %s ", sitem->primary_ip);
-    mvwprintw(infowin,  8, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin,  9, 0, " Used Protocol: ");
+    mvwprintw(infowin,  3, 0, " Current download speed: %ldB/s ", sitem->speed);
+    mvwprintw(infowin,  4, 0, " Max download speed: %ldB/s ", sitem->max_speed);
+    mvwprintw(infowin,  5, 0, " Response code: %ld ", sitem->rcode);
+    mvwprintw(infowin,  6, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin,  7, 0, " Download size: %f ", sitem->download_size);
+    mvwprintw(infowin,  8, 0, " Primary IP: %s ", sitem->primary_ip);
+    mvwprintw(infowin,  9, 0, " Primary port: %ld ", sitem->primary_port);
+    mvwprintw(infowin, 10, 0, " Used Protocol: ");
     switch (sitem->protocol) {
     case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
     case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
