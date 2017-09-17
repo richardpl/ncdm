@@ -141,9 +141,9 @@ static void write_infowin(DownloadItem *sitem)
         return;
 
     wattrset(infowin, COLOR_PAIR(7));
-    mvwprintw(infowin,  0, 0, " Filename: %s ", sitem->outputfilename);
-    mvwprintw(infowin,  1, 0, " URL: %s ", sitem->url);
-    mvwprintw(infowin,  2, 0, " Effective URL: %s ", sitem->effective_url);
+    mvwprintw(infowin,  0, 0, " Filename: %.*s ", COLS, sitem->outputfilename);
+    mvwprintw(infowin,  1, 0, " URL: %.*s ", COLS, sitem->url);
+    mvwprintw(infowin,  2, 0, " Effective URL: %.*s ", COLS, sitem->effective_url);
     mvwprintw(infowin,  3, 0, " Current download speed: %ldB/s ", sitem->speed);
     mvwprintw(infowin,  4, 0, " Max download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin,  5, 0, " Response code: %ld ", sitem->rcode);
@@ -294,11 +294,12 @@ static void finish(int sig)
     exit(sig);
 }
 
-static int create_handle(int overwrite, const char *newurl, const char *referer)
+static int create_handle(int overwrite, const char *newurl, const char *referer, const char *outname)
 {
     DownloadItem *item;
     FILE *outputfile = NULL;
-    char *ofilename;
+    const char *ofilename;
+    const char *lpath;
     char *escape;
     CURL *handle;
     int urllen, escape_url_size, i;
@@ -358,10 +359,8 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
         return 1;
     }
 
-    ofilename = (char *)&newurl[i+1];
-    if (!ofilename) {
-        finish(-1);
-    }
+    lpath = &newurl[i+1];
+    ofilename = outname ? outname : lpath;
 
     if (!overwrite)
         item->outputfile = outputfile = fopen(ofilename, "rb+");
@@ -385,7 +384,13 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
         return 1;
     }
 
-    escape = curl_easy_escape(handle, ofilename, 0);
+    escape = curl_easy_escape(handle, lpath, 0);
+    if (!escape) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
+        delete_ditem(item);
+        return 1;
+    }
+
     escape_url_size = strlen(escape) + strlen(newurl);
     item->escape_url = calloc(escape_url_size, sizeof(*item->escape_url));
     if (!item->escape_url) {
@@ -401,6 +406,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, outputfile);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(handle, CURLOPT_MAX_RECV_SPEED_LARGE, item->max_speed);
     if (referer)
         curl_easy_setopt(handle, CURLOPT_REFERER, referer);
@@ -580,13 +586,16 @@ int main(int argc, char *argv[])
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-R") && argc >= i+3) {
-            create_handle(0, argv[i+2], argv[i+1]);
+            create_handle(0, argv[i+2], argv[i+1], NULL);
+            i+=2;
+        } else if (!strcmp(argv[i], "-O") && argc >= i+3) {
+            create_handle(0, argv[i+2], NULL, argv[i+1]);
             i+=2;
         } else if (!strcmp(argv[i], "-M") && argc >= i+2) {
             max_total_connections = atol(argv[i+1]);
             i+=1;
         } else {
-            create_handle(0, argv[i], NULL);
+            create_handle(0, argv[i], NULL, NULL);
         }
     }
 
@@ -612,7 +621,7 @@ int main(int argc, char *argv[])
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (open_active && create_handle(overwrite, url, NULL)) {
+                if (open_active && create_handle(overwrite, url, NULL, NULL)) {
                     open_active = 0;
                     werase(openwin);
                     wnoutrefresh(openwin);
