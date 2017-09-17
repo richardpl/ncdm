@@ -16,10 +16,11 @@ Features
 Usage
 -----
 
-After starting, press F1 to display help.
+After starting, press F1 or ? to toggle display help.
 Use a/A to enter new download URL.
 Use S to stop/start all downloads.
-Use i to display more info for selected item.
+Use p to unpause/pause selected download.
+Use i to toggle more info for selected item.
 Use D to delete selected download from the download list.
 Use HOME/END & UP/DOWN to scroll items being downloaded.
 Use LEFT/RIGHT to decrease/increase speed of download.

@@ -625,7 +625,7 @@ int main(int argc, char *argv[])
         } else if (!open_active && !referer_active) {
             c = wgetch(downloads);
 
-            if (c == KEY_F(1)) {
+            if (c == KEY_F(1) || c == '?') {
                 help_active = !help_active;
                 need_refresh = 1;
             } else if (c == 'i') {
