@@ -16,6 +16,7 @@ typedef struct DownloadItem {
     int finished;
     int ufinished;
     char *url;
+    char *escape_url;
     char *effective_url;
     char *primary_ip;
     long primary_port;
@@ -251,6 +252,8 @@ static void uninit()
         item->outputfilename = NULL;
         free(item->url);
         item->url = NULL;
+        free(item->escape_url);
+        item->escape_url = NULL;
         item = item->next;
     }
 
@@ -296,8 +299,9 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
     DownloadItem *item;
     FILE *outputfile = NULL;
     char *ofilename;
+    char *escape;
     CURL *handle;
-    int urllen, i;
+    int urllen, escape_url_size, i;
 
     open_urlpos = 0;
     urllen = strlen(newurl);
@@ -381,7 +385,17 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
         return 1;
     }
 
-    curl_easy_setopt(handle, CURLOPT_URL, newurl);
+    escape = curl_easy_escape(handle, ofilename, 0);
+    escape_url_size = strlen(escape) + strlen(newurl);
+    item->escape_url = calloc(escape_url_size, sizeof(*item->escape_url));
+    if (!item->escape_url) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
+        delete_ditem(item);
+        return 1;
+    }
+
+    snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
+    curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, item);
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
