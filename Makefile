@@ -2,10 +2,12 @@ PREFIX=/usr/local
 
 CFLAGS = -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=199309L -D_FILE_OFFSET_BITS=64 -O3 -std=c99 -Wall -Wextra -g
 
+LIBS    = -lcurl -lncursesw
+SOURCES = main.c
 OBJECTS = main.o
 
 ncdm: $(OBJECTS)
-	$(CC) -o $@ $^ -lcurl -lncursesw $(LIBS)
+	$(CC) -o $@ $(SOURCES) $(LIBS)
 
 distclean: clean
 
