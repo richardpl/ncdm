@@ -30,6 +30,7 @@ typedef struct DownloadItem {
     curl_off_t max_speed;
     long int downloaded;
     long int start_time;
+    long int end_time;
     CURL *handle;
     struct DownloadItem *next;
     struct DownloadItem *prev;
@@ -146,9 +147,10 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin,  5, 0, " Response code: %ld ", sitem->rcode);
     mvwprintw(infowin,  6, 0, " Content-length: %f ", sitem->contentlength);
     mvwprintw(infowin,  7, 0, " Download size: %f ", sitem->download_size);
-    mvwprintw(infowin,  8, 0, " Primary IP: %s ", sitem->primary_ip);
-    mvwprintw(infowin,  9, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin, 10, 0, " Used Protocol: ");
+    mvwprintw(infowin,  8, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
+    mvwprintw(infowin,  9, 0, " Primary IP: %s ", sitem->primary_ip);
+    mvwprintw(infowin, 10, 0, " Primary port: %ld ", sitem->primary_port);
+    mvwprintw(infowin, 11, 0, " Used Protocol: ");
     switch (sitem->protocol) {
     case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
     case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
@@ -176,10 +178,12 @@ static int progressf(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_o
 {
     DownloadItem *item = clientp;
     long int stime = item->start_time ? item->start_time : start_time;
-    long int tdiff = time(NULL) - stime;
+    long int curr_time = time(NULL);
+    long int tdiff = curr_time - stime;
 
     if (item->finished) {
         item->progress = 100;
+        item->end_time = curr_time;
         return 0;
     }
 
