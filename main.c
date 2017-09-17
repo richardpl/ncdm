@@ -1,9 +1,11 @@
+#include <assert.h>
 #include <curl/curl.h>
 #include <curses.h>
 #include <math.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct DownloadItem {
@@ -25,6 +27,7 @@ typedef struct DownloadItem {
     double progress;
     double uprogress;
     int speed;
+    curl_off_t max_speed;
     long int downloaded;
     long int start_time;
     CURL *handle;
@@ -114,16 +117,18 @@ static void write_status(int color, const char *fmt, ...)
 static void write_helpwin()
 {
     wattrset(helpwin, COLOR_PAIR(5));
-    mvwaddstr(helpwin,  2, 2, " Key a - add new download URL, downloading from last position ");
-    mvwaddstr(helpwin,  3, 2, " Key A - add new download URL, downloading from beginning ");
-    mvwaddstr(helpwin,  4, 2, " Key Q - quit ");
-    mvwaddstr(helpwin,  5, 2, " Key S - start/stop all downloads ");
-    mvwaddstr(helpwin,  6, 2, " Key H - halt selected download ");
-    mvwaddstr(helpwin,  7, 2, " Key h - unhalt selected download ");
-    mvwaddstr(helpwin,  8, 2, " Key p - pause/unpause selected download ");
-    mvwaddstr(helpwin,  9, 2, " Key D - delete download from the list ");
-    mvwaddstr(helpwin, 10, 2, " Key R - set referer for the selected download ");
-    mvwaddstr(helpwin, 11, 2, " Key i - show extra info for selected download ");
+    mvwaddstr(helpwin,  0, 0, " Key a - add new download URL, downloading from last position ");
+    mvwaddstr(helpwin,  1, 0, " Key A - add new download URL, downloading from beginning ");
+    mvwaddstr(helpwin,  2, 0, " Key S - start/stop all downloads ");
+    mvwaddstr(helpwin,  3, 0, " Key H - halt selected download ");
+    mvwaddstr(helpwin,  4, 0, " Key h - unhalt selected download ");
+    mvwaddstr(helpwin,  5, 0, " Key p - pause/unpause selected download ");
+    mvwaddstr(helpwin,  6, 0, " Key D - delete selectedd download from the list ");
+    mvwaddstr(helpwin,  7, 0, " Key R - set referer for the selected download ");
+    mvwaddstr(helpwin,  8, 0, " Key i - show extra info for selected download ");
+    mvwaddstr(helpwin,  9, 0, " Key UP/DOWN - select download ");
+    mvwaddstr(helpwin, 10, 0, " Key LEFT/RIGHT - decrease/increase download speed ");
+    mvwaddstr(helpwin, 11, 0, " Key Q - quit ");
     wnoutrefresh(helpwin);
 }
 
@@ -136,12 +141,13 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin,  0, 0, " Filename: %s ", sitem->outputfilename);
     mvwprintw(infowin,  1, 0, " URL: %s ", sitem->url);
     mvwprintw(infowin,  2, 0, " Effective URL: %s ", sitem->effective_url);
-    mvwprintw(infowin,  3, 0, " Response code: %ld ", sitem->rcode);
-    mvwprintw(infowin,  4, 0, " Content-length: %f ", sitem->contentlength);
-    mvwprintw(infowin,  5, 0, " Download size: %f ", sitem->download_size);
-    mvwprintw(infowin,  6, 0, " Primary IP: %s ", sitem->primary_ip);
-    mvwprintw(infowin,  7, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin,  8, 0, " Used Protocol: ");
+    mvwprintw(infowin,  3, 0, " Max download speed: %ldB/s ", sitem->max_speed);
+    mvwprintw(infowin,  4, 0, " Response code: %ld ", sitem->rcode);
+    mvwprintw(infowin,  5, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin,  6, 0, " Download size: %f ", sitem->download_size);
+    mvwprintw(infowin,  7, 0, " Primary IP: %s ", sitem->primary_ip);
+    mvwprintw(infowin,  8, 0, " Primary port: %ld ", sitem->primary_port);
+    mvwprintw(infowin,  9, 0, " Used Protocol: ");
     switch (sitem->protocol) {
     case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
     case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
@@ -373,6 +379,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, outputfile);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(handle, CURLOPT_MAX_RECV_SPEED_LARGE, item->max_speed);
     if (referer)
         curl_easy_setopt(handle, CURLOPT_REFERER, referer);
 
@@ -743,6 +750,18 @@ int main(int argc, char *argv[])
                     }
                 }
                 need_refresh = 1;
+            } else if (c == KEY_RIGHT) {
+                if (sitem) {
+                    sitem->max_speed += 1024;
+                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                    need_refresh = 1;
+                }
+            } else if (c == KEY_LEFT) {
+                if (sitem) {
+                    sitem->max_speed = MAX(0, sitem->max_speed - 1024);
+                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                    need_refresh = 1;
+                }
             } else if (c == KEY_HOME) {
                 if (sitem && sitem != items) {
                     sitem->selected = 0;
@@ -808,7 +827,15 @@ int main(int argc, char *argv[])
                 need_refresh = 1;
             } else if (ret == CURLM_OK) {
                 curl_multi_wait(mhandle, NULL, 0, 1000, &numdfs);
-                need_refresh = 1;
+                if (numdfs > 0) {
+                    need_refresh = 1;
+                } else {
+                    struct timespec req, rem;
+
+                    req.tv_sec = 0;
+                    req.tv_nsec = 10000000L;
+                    nanosleep(&req, &rem);
+                }
             }
         }
 

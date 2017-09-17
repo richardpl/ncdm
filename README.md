@@ -8,9 +8,10 @@ NCDM is TUI tool to download files over various protocols.
 Features
 --------
 
-* Resume download.
-* Showing extra info.
-* Bunch of protocols supported.
+* Resume download
+* Showing extra info
+* Speed download control for each URL
+* Bunch of protocols supported
 
 Usage
 -----
@@ -20,7 +21,8 @@ Use a/A to enter new download URL.
 Use S to stop/start all downloads.
 Use i to display more info for selected item.
 Use D to delete selected download from the download list.
-Use HOME/END & UP/DOWN to scroll via items being downloaded.
+Use HOME/END & UP/DOWN to scroll items being downloaded.
+Use LEFT/RIGHT to decrease/increase speed of download.
 Use Q to quit.
 
 You can also give URLs you want to download via command-line parameters.

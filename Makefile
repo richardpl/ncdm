@@ -1,6 +1,6 @@
 PREFIX=/usr/local
 
-CFLAGS = -D_XOPEN_SOURCE=500 -D_FILE_OFFSET_BITS=64 -O3 -std=c99 -Wall -Wextra -g
+CFLAGS = -D_XOPEN_SOURCE=500 -D_POSIX_C_SOURCE=199309L -D_FILE_OFFSET_BITS=64 -O3 -std=c99 -Wall -Wextra -g
 
 OBJECTS = main.o
 
