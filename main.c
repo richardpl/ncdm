@@ -13,6 +13,7 @@ typedef struct DownloadItem {
     int finished;
     int ufinished;
     char *url;
+    char *effective_url;
     char *primary_ip;
     long primary_port;
     long rcode;
@@ -133,13 +134,14 @@ static void write_infowin(DownloadItem *sitem)
 
     wattrset(infowin, COLOR_PAIR(7));
     mvwprintw(infowin,  0, 0, " Filename: %s ", sitem->outputfilename);
-    mvwprintw(infowin,  1, 0, " Effective URL: %s ", sitem->url);
-    mvwprintw(infowin,  2, 0, " Response code: %ld ", sitem->rcode);
-    mvwprintw(infowin,  3, 0, " Content-length: %f ", sitem->contentlength);
-    mvwprintw(infowin,  4, 0, " Download size: %f ", sitem->download_size);
-    mvwprintw(infowin,  5, 0, " Primary IP: %s ", sitem->primary_ip);
-    mvwprintw(infowin,  6, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin,  7, 0, " Used Protocol: ");
+    mvwprintw(infowin,  1, 0, " URL: %s ", sitem->url);
+    mvwprintw(infowin,  2, 0, " Effective URL: %s ", sitem->effective_url);
+    mvwprintw(infowin,  3, 0, " Response code: %ld ", sitem->rcode);
+    mvwprintw(infowin,  4, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin,  5, 0, " Download size: %f ", sitem->download_size);
+    mvwprintw(infowin,  6, 0, " Primary IP: %s ", sitem->primary_ip);
+    mvwprintw(infowin,  7, 0, " Primary port: %ld ", sitem->primary_port);
+    mvwprintw(infowin,  8, 0, " Used Protocol: ");
     switch (sitem->protocol) {
     case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
     case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
@@ -235,6 +237,8 @@ static void uninit()
         fclose(item->outputfile);
         free(item->outputfilename);
         item->outputfilename = NULL;
+        free(item->url);
+        item->url = NULL;
         item = item->next;
     }
 
@@ -295,6 +299,13 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
             break;
     }
 
+    for (item = items; item; item = item->next) {
+        if (!strcmp(newurl, item->url)) {
+            write_status(A_REVERSE | COLOR_PAIR(1), "URL already in use");
+            return 1;
+        }
+    }
+
     if (items == NULL) {
         items = calloc(1, sizeof(DownloadItem));
         if (!items) {
@@ -324,10 +335,18 @@ static int create_handle(int overwrite, const char *newurl, const char *referer)
         item->prev = prev;
     }
 
+    item->url = strdup(newurl);
+    if (!item->url) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to copy URL");
+        delete_ditem(item);
+        return 1;
+    }
+
     ofilename = (char *)&newurl[i+1];
     if (!ofilename) {
         finish(-1);
     }
+
     if (!overwrite)
         item->outputfile = outputfile = fopen(ofilename, "rb+");
     if (!outputfile)
@@ -604,7 +623,7 @@ int main(int argc, char *argv[])
             } else if (c == 'i') {
                 info_active = !info_active;
                 if (info_active && sitem) {
-                    curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->url);
+                    curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->effective_url);
                     curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
                     curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
                     curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
