@@ -42,6 +42,12 @@ typedef struct DownloadItem {
 #define ENTERING_REFERER 2
 #define ENTERING_SEARCH  3
 
+#define PARAM_REFERER    1
+#define PARAM_OUTPUT     2
+#define PARAM_MAXTCONN   3
+#define PARAM_OUTPUTOVER 4
+#define PARAM_INPUTFILE  5
+
 #define MAX_STRING_LEN 16384
 
 char *last_search = NULL;
@@ -605,25 +611,25 @@ static int parse_parameters(int argc, char *argv[],
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-R")) {
-            param = 1;
+            param = PARAM_REFERER;
         } else if (!strcmp(argv[i], "-o")) {
-            param = 2;
+            param = PARAM_OUTPUT;
             overwrite = 0;
         } else if (!strcmp(argv[i], "-M")) {
-            param = 3;
+            param = PARAM_MAXTCONN;
         } else if (!strcmp(argv[i], "-O")) {
-            param = 4;
+            param = PARAM_OUTPUTOVER;
             overwrite = 1;
         } else if (!strcmp(argv[i], "-i")) {
-            param = 5;
+            param = PARAM_INPUTFILE;
         } else {
-            if (param == 1) {
+            if (param == PARAM_REFERER) {
                 referer = argv[i];
-            } else if (param == 2 || param == 4) {
+            } else if (param == PARAM_OUTPUT || param == PARAM_OUTPUTOVER) {
                 output = argv[i];
-            } else if (param == 3) {
+            } else if (param == PARAM_MAXTCONN) {
                 max = atol(argv[i]);
-            } else if (param == 5) {
+            } else if (param == PARAM_INPUTFILE) {
                 parse_file(argv[i]);
             } else {
                 create_handle(overwrite, argv[i], referer, output);
