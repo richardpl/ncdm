@@ -404,7 +404,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     }
 
     snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
-    free(escape);
+    curl_free(escape);
 
     curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
