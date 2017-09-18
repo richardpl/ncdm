@@ -573,6 +573,24 @@ static void init_windows(int downloading)
     leaveok(openwin,   TRUE);
 }
 
+static int parse_file(char *filename)
+{
+    FILE *file = fopen(filename, "r");
+
+    if (!file)
+        return -1;
+
+    while (fgets(string, MAX_STRING_LEN, file) != NULL) {
+        size_t len = strlen(string);
+
+        if (len > 0 && string[len-1] == '\n')
+            string[len-1] = '\0';
+        create_handle(0, string, NULL, NULL);
+    }
+
+    return 0;
+}
+
 static int parse_parameters(int argc, char *argv[],
                             long *max_total_connections)
 {
@@ -593,6 +611,8 @@ static int parse_parameters(int argc, char *argv[],
         } else if (!strcmp(argv[i], "-O")) {
             param = 4;
             overwrite = 1;
+        } else if (!strcmp(argv[i], "-i")) {
+            param = 5;
         } else {
             if (param == 1) {
                 referer = argv[i];
@@ -600,6 +620,8 @@ static int parse_parameters(int argc, char *argv[],
                 output = argv[i];
             } else if (param == 3) {
                 max = atol(argv[i]);
+            } else if (param == 5) {
+                parse_file(argv[i]);
             } else {
                 create_handle(overwrite, argv[i], referer, output);
                 referer = output = NULL;
