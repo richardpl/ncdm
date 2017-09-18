@@ -397,6 +397,11 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
             delete_ditem(item);
             return 1;
         }
+
+        for (i = urllen - 1; i >= 0; i--) {
+            if (newurl[i] == '/')
+                break;
+        }
         snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
         curl_free(escape);
     } else {
