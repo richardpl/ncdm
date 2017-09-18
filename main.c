@@ -159,6 +159,14 @@ static void write_infowin(DownloadItem *sitem)
     if (!sitem)
         return;
 
+    curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->effective_url);
+    curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
+    curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
+    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
+    curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
+    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_IP, &sitem->primary_ip);
+    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_PORT, &sitem->primary_port);
+
     wattrset(infowin, COLOR_PAIR(7));
     mvwprintw(infowin, i++, 0, " Filename: %.*s ", COLS, sitem->outputfilename);
     mvwprintw(infowin, i++, 0, " URL: %.*s ", COLS, sitem->url);
@@ -726,15 +734,6 @@ int main(int argc, char *argv[])
                 need_refresh = 1;
             } else if (c == 'i') {
                 info_active = !info_active;
-                if (info_active && sitem) {
-                    curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->effective_url);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_IP, &sitem->primary_ip);
-                    curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_PORT, &sitem->primary_port);
-                }
                 need_refresh = 1;
             } else if (c == 'A' || c == 'a') {
                 if (c == 'A')
