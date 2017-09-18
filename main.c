@@ -582,6 +582,8 @@ static void init_windows(int downloading)
     keypad(openwin,    TRUE);
 
     leaveok(downloads, TRUE);
+    leaveok(statuswin, TRUE);
+    leaveok(helpwin,   TRUE);
     leaveok(infowin,   TRUE);
     leaveok(openwin,   TRUE);
 }
