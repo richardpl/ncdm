@@ -373,22 +373,18 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         return 1;
     }
 
-    unescape = curl_easy_unescape(handle, newurl, 0, NULL);
+    unescape = curl_easy_unescape(handle, newurl, urllen, NULL);
     if (!unescape) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to unescape URL");
         delete_ditem(item);
         return 1;
     }
 
-    for (i = urllen - 1; i >= 0; i--) {
-        if (unescape[i] == '/')
-            break;
-    }
-
-    lpath = &unescape[i+1];
+    lpath = strrchr(unescape, '/') + 1;
     if (!strcmp(unescape, newurl)) {
         char *escape = curl_easy_escape(handle, lpath, 0);
         if (!escape) {
+            curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
             delete_ditem(item);
             return 1;
@@ -396,6 +392,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         escape_url_size = strlen(escape) + strlen(newurl);
         item->escape_url = calloc(escape_url_size, sizeof(*item->escape_url));
         if (!item->escape_url) {
+            curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
             delete_ditem(item);
             return 1;
@@ -405,26 +402,27 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     } else {
         item->escape_url = strdup(newurl);
         if (!item->escape_url) {
+            curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate url");
             delete_ditem(item);
             return 1;
         }
     }
-    curl_free(unescape);
 
     ofilename = outname ? outname : lpath;
+    item->outputfilename = strdup(ofilename);
+    curl_free(unescape);
 
     if (!overwrite)
-        item->outputfile = outputfile = fopen(ofilename, "rb+");
+        item->outputfile = outputfile = fopen(item->outputfilename, "rb+");
     if (!outputfile)
-        item->outputfile = outputfile = fopen(ofilename, "wb");
+        item->outputfile = outputfile = fopen(item->outputfilename, "wb");
     if (!outputfile) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", ofilename);
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", item->outputfilename);
         delete_ditem(item);
         return 1;
     }
 
-    item->outputfilename = strdup(ofilename);
     if (!item->outputfilename) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
         delete_ditem(item);
