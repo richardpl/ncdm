@@ -38,15 +38,15 @@ typedef struct DownloadItem {
     struct DownloadItem *prev;
 } DownloadItem;
 
-#define MAX_URL_LEN 16384
+#define MAX_STRING_LEN 16384
 
-char *url = NULL;
+char *string = NULL;
 int start_all = 0;
 CURLM *mhandle = NULL;
 DownloadItem *items = NULL;
 long int start_time = INT_MIN;
 int nb_ditems = 0;
-int open_urlpos = 0;
+int string_pos = 0;
 
 WINDOW *infowin   = NULL;
 WINDOW *openwin   = NULL;
@@ -274,8 +274,8 @@ static void uninit()
     curl_global_cleanup();
     free(items);
     items = NULL;
-    free(url);
-    url = NULL;
+    free(string);
+    string = NULL;
 }
 
 static void error(int sig, const char *error_msg)
@@ -304,7 +304,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     CURL *handle;
     int urllen, escape_url_size, i;
 
-    open_urlpos = 0;
+    string_pos = 0;
     urllen = strlen(newurl);
     if (urllen <= 1) {
         werase(openwin);
@@ -591,9 +591,9 @@ int main(int argc, char *argv[])
 
     signal(SIGINT, finish);
 
-    url = calloc(MAX_URL_LEN, sizeof(*url));
-    if (!url) {
-        error(-1, "Failed to allocate url storage.\n");
+    string = calloc(MAX_STRING_LEN, sizeof(*string));
+    if (!string) {
+        error(-1, "Failed to allocate string storage.\n");
     }
 
     mhandle = curl_multi_init();
@@ -647,37 +647,37 @@ int main(int argc, char *argv[])
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (open_active && create_handle(overwrite, url, NULL, NULL)) {
+                if (open_active && create_handle(overwrite, string, NULL, NULL)) {
                     open_active = 0;
                     werase(openwin);
                     wnoutrefresh(openwin);
                     doupdate();
                     continue;
                 } else if (referer_active) {
-                    curl_easy_setopt(sitem->handle, CURLOPT_REFERER, url);
+                    curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
                     referer_active = 0;
                 }
                 need_refresh = 1;
-                open_urlpos = 0;
+                string_pos = 0;
                 open_active = 0;
-                url[0] = '\0';
+                string[0] = '\0';
                 werase(openwin);
             } else if (c == KEY_BACKSPACE || c == KEY_DC || c == '\b' || c == 127 || c == 8) {
                 werase(openwin);
-                if (open_urlpos > 0) {
-                    url[open_urlpos - 1] = 0;
-                    open_urlpos--;
+                if (string_pos > 0) {
+                    string[string_pos - 1] = 0;
+                    string_pos--;
                 }
                 need_refresh = 1;
             } else if (!(c & KEY_CODE_YES)) {
-                if (open_urlpos < MAX_URL_LEN - 1) {
-                    url[open_urlpos++] = c;
-                    url[open_urlpos] = 0;
+                if (string_pos < MAX_STRING_LEN - 1) {
+                    string[string_pos++] = c;
+                    string[string_pos] = 0;
                 }
                 need_refresh = 1;
             }
-            mvwaddstr(openwin, skip_y, skip_x, url + MAX((signed)strlen(url) + skip_x - COLS, 0));
-            mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(url), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
+            mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
+            mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
         } else if (!open_active && !referer_active) {
             c = wgetch(downloads);
 
