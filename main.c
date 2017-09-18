@@ -141,21 +141,21 @@ static void write_helpwin()
     int i = 0;
 
     wattrset(helpwin, COLOR_PAIR(5));
-    mvwaddstr(helpwin, i++, 0, " Key a - add new download URL, downloading from last position ");
-    mvwaddstr(helpwin, i++, 0, " Key A - add new download URL, downloading from beginning ");
-    mvwaddstr(helpwin, i++, 0, " Key S - start/stop all downloads ");
-    mvwaddstr(helpwin, i++, 0, " Key H - halt selected download ");
-    mvwaddstr(helpwin, i++, 0, " Key h - unhalt selected download ");
-    mvwaddstr(helpwin, i++, 0, " Key p - pause/unpause selected download ");
-    mvwaddstr(helpwin, i++, 0, " Key D - delete selectedd download from the list ");
-    mvwaddstr(helpwin, i++, 0, " Key R - set referer for the selected download ");
-    mvwaddstr(helpwin, i++, 0, " Key i - show extra info for selected download ");
-    mvwaddstr(helpwin, i++, 0, " Key / - search for download ");
-    mvwaddstr(helpwin, i++, 0, " Key n - repeat last search ");
-    mvwaddstr(helpwin, i++, 0, " Key N - repeat last search backward ");
-    mvwaddstr(helpwin, i++, 0, " Key UP/DOWN - select download ");
-    mvwaddstr(helpwin, i++, 0, " Key LEFT/RIGHT - decrease/increase download speed ");
-    mvwaddstr(helpwin, i++, 0, " Key Q - quit ");
+    mvwaddstr(helpwin, i++, 0, " a - add new download URL, downloading from last position ");
+    mvwaddstr(helpwin, i++, 0, " A - add new download URL, downloading from beginning ");
+    mvwaddstr(helpwin, i++, 0, " S - start/stop all downloads ");
+    mvwaddstr(helpwin, i++, 0, " H - halt selected download ");
+    mvwaddstr(helpwin, i++, 0, " h - unhalt selected download ");
+    mvwaddstr(helpwin, i++, 0, " p - pause/unpause selected download ");
+    mvwaddstr(helpwin, i++, 0, " D - delete selectedd download from the list ");
+    mvwaddstr(helpwin, i++, 0, " R - set referer for the selected download ");
+    mvwaddstr(helpwin, i++, 0, " i - show extra info for selected download ");
+    mvwaddstr(helpwin, i++, 0, " / - search for download ");
+    mvwaddstr(helpwin, i++, 0, " n - repeat last search ");
+    mvwaddstr(helpwin, i++, 0, " N - repeat last search backward ");
+    mvwaddstr(helpwin, i++, 0, " UP/DOWN - select download ");
+    mvwaddstr(helpwin, i++, 0, " LEFT/RIGHT - decrease/increase download speed ");
+    mvwaddstr(helpwin, i++, 0, " Q - quit ");
     wnoutrefresh(helpwin);
 }
 
