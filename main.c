@@ -38,6 +38,10 @@ typedef struct DownloadItem {
     struct DownloadItem *prev;
 } DownloadItem;
 
+#define ENTERING_URL     1
+#define ENTERING_REFERER 2
+#define ENTERING_SEARCH  3
+
 #define MAX_STRING_LEN 16384
 
 char *string = NULL;
@@ -119,40 +123,45 @@ static void write_status(int color, const char *fmt, ...)
 
 static void write_helpwin()
 {
+    int i = 0;
+
     wattrset(helpwin, COLOR_PAIR(5));
-    mvwaddstr(helpwin,  0, 0, " Key a - add new download URL, downloading from last position ");
-    mvwaddstr(helpwin,  1, 0, " Key A - add new download URL, downloading from beginning ");
-    mvwaddstr(helpwin,  2, 0, " Key S - start/stop all downloads ");
-    mvwaddstr(helpwin,  3, 0, " Key H - halt selected download ");
-    mvwaddstr(helpwin,  4, 0, " Key h - unhalt selected download ");
-    mvwaddstr(helpwin,  5, 0, " Key p - pause/unpause selected download ");
-    mvwaddstr(helpwin,  6, 0, " Key D - delete selectedd download from the list ");
-    mvwaddstr(helpwin,  7, 0, " Key R - set referer for the selected download ");
-    mvwaddstr(helpwin,  8, 0, " Key i - show extra info for selected download ");
-    mvwaddstr(helpwin,  9, 0, " Key UP/DOWN - select download ");
-    mvwaddstr(helpwin, 10, 0, " Key LEFT/RIGHT - decrease/increase download speed ");
-    mvwaddstr(helpwin, 11, 0, " Key Q - quit ");
+    mvwaddstr(helpwin, i++, 0, " Key a - add new download URL, downloading from last position ");
+    mvwaddstr(helpwin, i++, 0, " Key A - add new download URL, downloading from beginning ");
+    mvwaddstr(helpwin, i++, 0, " Key S - start/stop all downloads ");
+    mvwaddstr(helpwin, i++, 0, " Key H - halt selected download ");
+    mvwaddstr(helpwin, i++, 0, " Key h - unhalt selected download ");
+    mvwaddstr(helpwin, i++, 0, " Key p - pause/unpause selected download ");
+    mvwaddstr(helpwin, i++, 0, " Key D - delete selectedd download from the list ");
+    mvwaddstr(helpwin, i++, 0, " Key R - set referer for the selected download ");
+    mvwaddstr(helpwin, i++, 0, " Key i - show extra info for selected download ");
+    mvwaddstr(helpwin, i++, 0, " Key / - search for download ");
+    mvwaddstr(helpwin, i++, 0, " Key UP/DOWN - select download ");
+    mvwaddstr(helpwin, i++, 0, " Key LEFT/RIGHT - decrease/increase download speed ");
+    mvwaddstr(helpwin, i++, 0, " Key Q - quit ");
     wnoutrefresh(helpwin);
 }
 
 static void write_infowin(DownloadItem *sitem)
 {
+    int i = 0;
+
     if (!sitem)
         return;
 
     wattrset(infowin, COLOR_PAIR(7));
-    mvwprintw(infowin,  0, 0, " Filename: %.*s ", COLS, sitem->outputfilename);
-    mvwprintw(infowin,  1, 0, " URL: %.*s ", COLS, sitem->url);
-    mvwprintw(infowin,  2, 0, " Effective URL: %.*s ", COLS, sitem->effective_url);
-    mvwprintw(infowin,  3, 0, " Current download speed: %ldB/s ", sitem->speed);
-    mvwprintw(infowin,  4, 0, " Max download speed: %ldB/s ", sitem->max_speed);
-    mvwprintw(infowin,  5, 0, " Response code: %ld ", sitem->rcode);
-    mvwprintw(infowin,  6, 0, " Content-length: %f ", sitem->contentlength);
-    mvwprintw(infowin,  7, 0, " Download size: %f ", sitem->download_size);
-    mvwprintw(infowin,  8, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
-    mvwprintw(infowin,  9, 0, " Primary IP: %s ", sitem->primary_ip);
-    mvwprintw(infowin, 10, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin, 11, 0, " Used Protocol: ");
+    mvwprintw(infowin, i++, 0, " Filename: %.*s ", COLS, sitem->outputfilename);
+    mvwprintw(infowin, i++, 0, " URL: %.*s ", COLS, sitem->url);
+    mvwprintw(infowin, i++, 0, " Effective URL: %.*s ", COLS, sitem->effective_url);
+    mvwprintw(infowin, i++, 0, " Current download speed: %ldB/s ", sitem->speed);
+    mvwprintw(infowin, i++, 0, " Max download speed: %ldB/s ", sitem->max_speed);
+    mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
+    mvwprintw(infowin, i++, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin, i++, 0, " Download size: %f ", sitem->download_size);
+    mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
+    mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
+    mvwprintw(infowin, i++, 0, " Primary port: %ld ", sitem->primary_port);
+    mvwprintw(infowin, i++, 0, " Used Protocol: ");
     switch (sitem->protocol) {
     case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
     case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
@@ -535,6 +544,8 @@ static void init_windows(int downloading)
     }
 
     keypad(downloads,  TRUE);
+    keypad(openwin,    TRUE);
+
     leaveok(downloads, TRUE);
     leaveok(infowin,   TRUE);
     leaveok(openwin,   TRUE);
@@ -639,22 +650,36 @@ int main(int argc, char *argv[])
         if (active_input) {
             int skip_y, skip_x;
 
-            if (active_input == 1)
-                mvwaddstr(openwin, 0, 0, "Enter URL: ");
-            else if (active_input == 2)
-                mvwaddstr(openwin, 0, 0, "Enter referer: ");
+            if (active_input == ENTERING_URL)
+                mvwaddstr(openwin, 0, 0, "URL: ");
+            else if (active_input == ENTERING_REFERER)
+                mvwaddstr(openwin, 0, 0, "Referer: ");
+            else if (active_input == ENTERING_SEARCH)
+                mvwaddstr(openwin, 0, 0, "Search: ");
             getyx(openwin, skip_y, skip_x);
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (active_input == 1 && create_handle(overwrite, string, NULL, NULL)) {
+                if (active_input == ENTERING_URL && create_handle(overwrite, string, NULL, NULL)) {
                     active_input = 0;
                     werase(openwin);
                     wnoutrefresh(openwin);
                     doupdate();
                     continue;
-                } else if (active_input == 2) {
+                } else if (active_input == ENTERING_REFERER) {
                     curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
+                } else if (active_input == ENTERING_SEARCH) {
+                    DownloadItem *nsitem = items;
+
+                    for (;nsitem; nsitem = nsitem->next) {
+                        if (strstr(nsitem->outputfilename, string)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            break;
+                        }
+                    }
                 }
                 need_refresh = 1;
                 string_pos = 0;
@@ -702,7 +727,7 @@ int main(int argc, char *argv[])
                     overwrite = 0;
 
                 if (!active_input) {
-                    active_input = 1;
+                    active_input = ENTERING_URL;
                     continue;
                 }
             } else if (c == 'Q') {
@@ -754,9 +779,14 @@ int main(int argc, char *argv[])
             } else if (c == 'R') {
                 if (sitem) {
                     if (!active_input) {
-                        active_input = 2;
+                        active_input = ENTERING_REFERER;
                         continue;
                     }
+                }
+            } else if (c == '/') {
+                if (!active_input) {
+                    active_input = ENTERING_SEARCH;
+                    continue;
                 }
             } else if (c == 'H') {
                 if (sitem && !sitem->inactive) {
