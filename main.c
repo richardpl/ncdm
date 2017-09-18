@@ -585,7 +585,7 @@ int main(int argc, char *argv[])
 {
     DownloadItem *sitem = NULL;
     int downloading = 0, help_active = 0, overwrite = 0;
-    int open_active = 0, referer_active = 0, info_active = 0;
+    int active_input = 0, info_active = 0;
     int need_refresh = 0;
     long max_total_connections = 0;
 
@@ -636,31 +636,30 @@ int main(int argc, char *argv[])
     for (;;) {
         int c;
 
-        if (open_active || referer_active) {
+        if (active_input) {
             int skip_y, skip_x;
 
-            if (open_active)
+            if (active_input == 1)
                 mvwaddstr(openwin, 0, 0, "Enter URL: ");
-            else
+            else if (active_input == 2)
                 mvwaddstr(openwin, 0, 0, "Enter referer: ");
             getyx(openwin, skip_y, skip_x);
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (open_active && create_handle(overwrite, string, NULL, NULL)) {
-                    open_active = 0;
+                if (active_input == 1 && create_handle(overwrite, string, NULL, NULL)) {
+                    active_input = 0;
                     werase(openwin);
                     wnoutrefresh(openwin);
                     doupdate();
                     continue;
-                } else if (referer_active) {
+                } else if (active_input == 2) {
                     curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
-                    referer_active = 0;
                 }
                 need_refresh = 1;
                 string_pos = 0;
-                open_active = 0;
                 string[0] = '\0';
+                active_input = 0;
                 werase(openwin);
             } else if (c == KEY_BACKSPACE || c == KEY_DC || c == '\b' || c == 127 || c == 8) {
                 werase(openwin);
@@ -678,7 +677,7 @@ int main(int argc, char *argv[])
             }
             mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
             mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
-        } else if (!open_active && !referer_active) {
+        } else if (!active_input) {
             c = wgetch(downloads);
 
             if (c == KEY_F(1) || c == '?') {
@@ -702,8 +701,8 @@ int main(int argc, char *argv[])
                 else
                     overwrite = 0;
 
-                if (!open_active) {
-                    open_active = 1;
+                if (!active_input) {
+                    active_input = 1;
                     continue;
                 }
             } else if (c == 'Q') {
@@ -754,8 +753,8 @@ int main(int argc, char *argv[])
                 }
             } else if (c == 'R') {
                 if (sitem) {
-                    if (!referer_active) {
-                        referer_active = 1;
+                    if (!active_input) {
+                        active_input = 2;
                         continue;
                     }
                 }
@@ -848,8 +847,7 @@ int main(int argc, char *argv[])
                 init_windows(downloading);
 
                 help_active = 0;
-                open_active = 0;
-                referer_active = 0;
+                active_input = 0;
                 need_refresh = 1;
             } else if (c == KEY_MOUSE) {
                 MEVENT mouse_event;
