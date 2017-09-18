@@ -311,7 +311,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     FILE *outputfile = NULL;
     const char *ofilename;
     const char *lpath;
-    char *escape;
+    char *unescape;
     CURL *handle;
     int urllen, escape_url_size, i;
 
@@ -322,13 +322,8 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         return 1;
     }
 
-    for (i = urllen - 1; i >= 0; i--) {
-        if (newurl[i] == '/')
-            break;
-    }
-
     for (item = items; item; item = item->next) {
-        if (!strcmp(newurl, item->url)) {
+        if (item->url && !strcmp(newurl, item->url)) {
             write_status(A_REVERSE | COLOR_PAIR(1), "URL already in use");
             return 1;
         }
@@ -363,7 +358,52 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         return 1;
     }
 
-    lpath = &newurl[i+1];
+    item->handle = handle = curl_easy_init();
+    if (!handle) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to create curl easy handle");
+        delete_ditem(item);
+        return 1;
+    }
+
+    unescape = curl_easy_unescape(handle, newurl, 0, NULL);
+    if (!unescape) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to unescape URL");
+        delete_ditem(item);
+        return 1;
+    }
+
+    for (i = urllen - 1; i >= 0; i--) {
+        if (unescape[i] == '/')
+            break;
+    }
+
+    lpath = &unescape[i+1];
+    if (!strcmp(unescape, newurl)) {
+        char *escape = curl_easy_escape(handle, lpath, 0);
+        if (!escape) {
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
+            delete_ditem(item);
+            return 1;
+        }
+        escape_url_size = strlen(escape) + strlen(newurl);
+        item->escape_url = calloc(escape_url_size, sizeof(*item->escape_url));
+        if (!item->escape_url) {
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
+            delete_ditem(item);
+            return 1;
+        }
+        snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
+        curl_free(escape);
+    } else {
+        item->escape_url = strdup(newurl);
+        if (!item->escape_url) {
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate url");
+            delete_ditem(item);
+            return 1;
+        }
+    }
+    curl_free(unescape);
+
     ofilename = outname ? outname : lpath;
 
     if (!overwrite)
@@ -375,36 +415,13 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         delete_ditem(item);
         return 1;
     }
-    item->handle = handle = curl_easy_init();
-    if (!handle) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to create curl easy handle");
-        delete_ditem(item);
-        return 1;
-    }
+
     item->outputfilename = strdup(ofilename);
     if (!item->outputfilename) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
         delete_ditem(item);
         return 1;
     }
-
-    escape = curl_easy_escape(handle, lpath, 0);
-    if (!escape) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
-        delete_ditem(item);
-        return 1;
-    }
-
-    escape_url_size = strlen(escape) + strlen(newurl);
-    item->escape_url = calloc(escape_url_size, sizeof(*item->escape_url));
-    if (!item->escape_url) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
-        delete_ditem(item);
-        return 1;
-    }
-
-    snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
-    curl_free(escape);
 
     curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
