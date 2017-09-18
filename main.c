@@ -44,10 +44,12 @@ typedef struct DownloadItem {
 
 #define MAX_STRING_LEN 16384
 
+char *last_search = NULL;
 char *string = NULL;
 int start_all = 0;
 CURLM *mhandle = NULL;
 DownloadItem *items = NULL;
+DownloadItem *items_tail = NULL;
 long int start_time = INT_MIN;
 int nb_ditems = 0;
 int string_pos = 0;
@@ -136,6 +138,8 @@ static void write_helpwin()
     mvwaddstr(helpwin, i++, 0, " Key R - set referer for the selected download ");
     mvwaddstr(helpwin, i++, 0, " Key i - show extra info for selected download ");
     mvwaddstr(helpwin, i++, 0, " Key / - search for download ");
+    mvwaddstr(helpwin, i++, 0, " Key n - repeat last search ");
+    mvwaddstr(helpwin, i++, 0, " Key N - repeat last search backward ");
     mvwaddstr(helpwin, i++, 0, " Key UP/DOWN - select download ");
     mvwaddstr(helpwin, i++, 0, " Key LEFT/RIGHT - decrease/increase download speed ");
     mvwaddstr(helpwin, i++, 0, " Key Q - quit ");
@@ -252,9 +256,7 @@ static void uninit()
 {
     DownloadItem *item = items;
 
-    for (;;) {
-        if (item == NULL)
-            break;
+    for (;item;) {
         curl_easy_cleanup(item->handle);
         fclose(item->outputfile);
         free(item->outputfilename);
@@ -283,6 +285,9 @@ static void uninit()
     curl_global_cleanup();
     free(items);
     items = NULL;
+    items_tail = NULL;
+    free(last_search);
+    last_search = NULL;
     free(string);
     string = NULL;
 }
@@ -338,7 +343,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate DownloadItem");
             return 1;
         }
-        item = items;
+        item = items_tail = items;
     } else {
         DownloadItem *prev;
 
@@ -357,7 +362,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
         }
 
         prev = item;
-        item = item->next;
+        item = items_tail = item->next;
         item->prev = prev;
     }
 
@@ -680,6 +685,8 @@ int main(int argc, char *argv[])
                             break;
                         }
                     }
+                    free(last_search);
+                    last_search = strdup(string);
                 }
                 need_refresh = 1;
                 string_pos = 0;
@@ -787,6 +794,36 @@ int main(int argc, char *argv[])
                 if (!active_input) {
                     active_input = ENTERING_SEARCH;
                     continue;
+                }
+            } else if (c == 'n') {
+                if (last_search) {
+                    DownloadItem *nsitem = sitem ? sitem->next : items;
+
+                    for (;nsitem; nsitem = nsitem->next) {
+                        if (strstr(nsitem->outputfilename, last_search)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            need_refresh = 1;
+                            break;
+                        }
+                    }
+                }
+            } else if (c == 'N') {
+                if (last_search) {
+                    DownloadItem *nsitem = sitem ? sitem->prev : items_tail;
+
+                    for (;nsitem; nsitem = nsitem->prev) {
+                        if (strstr(nsitem->outputfilename, last_search)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            need_refresh = 1;
+                            break;
+                        }
+                    }
                 }
             } else if (c == 'H') {
                 if (sitem && !sitem->inactive) {
