@@ -47,6 +47,7 @@ typedef struct DownloadItem {
 #define PARAM_MAXTCONN   3
 #define PARAM_OUTPUTOVER 4
 #define PARAM_INPUTFILE  5
+#define PARAM_MAXSPEED   6
 
 #define MAX_STRING_LEN 16384
 
@@ -319,7 +320,9 @@ static void finish(int sig)
     exit(sig);
 }
 
-static int create_handle(int overwrite, const char *newurl, const char *referer, const char *outname)
+static int create_handle(int overwrite, const char *newurl,
+                         const char *referer, const char *outname,
+                         curl_off_t speed)
 {
     DownloadItem *item;
     FILE *outputfile = NULL;
@@ -422,6 +425,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
 
     ofilename = outname ? outname : lpath;
     item->outputfilename = strdup(ofilename);
+    item->max_speed = speed;
     curl_free(unescape);
 
     if (!overwrite)
@@ -594,7 +598,7 @@ static int parse_file(char *filename)
 
         if (len > 0 && string[len-1] == '\n')
             string[len-1] = '\0';
-        create_handle(0, string, NULL, NULL);
+        create_handle(0, string, NULL, NULL, 0);
     }
 
     return 0;
@@ -605,7 +609,7 @@ static int parse_parameters(int argc, char *argv[],
 {
     const char *referer = NULL;
     const char *output = NULL;
-    long max = 0;
+    long max = 0, speed = 0;
     int overwrite = 0;
     int i, param = 0;
 
@@ -622,6 +626,8 @@ static int parse_parameters(int argc, char *argv[],
             overwrite = 1;
         } else if (!strcmp(argv[i], "-i")) {
             param = PARAM_INPUTFILE;
+        } else if (!strcmp(argv[i], "-s")) {
+            param = PARAM_MAXSPEED;
         } else {
             if (param == PARAM_REFERER) {
                 referer = argv[i];
@@ -631,10 +637,13 @@ static int parse_parameters(int argc, char *argv[],
                 max = atol(argv[i]);
             } else if (param == PARAM_INPUTFILE) {
                 parse_file(argv[i]);
+            } else if (param == PARAM_MAXSPEED) {
+                speed = atol(argv[i]);
             } else {
-                create_handle(overwrite, argv[i], referer, output);
+                create_handle(overwrite, argv[i], referer, output, speed);
                 referer = output = NULL;
                 overwrite = 0;
+                speed = 0;
             }
             param = 0;
         }
@@ -713,7 +722,7 @@ int main(int argc, char *argv[])
 
             c = wgetch(openwin);
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (active_input == ENTERING_URL && create_handle(overwrite, string, NULL, NULL)) {
+                if (active_input == ENTERING_URL && create_handle(overwrite, string, NULL, NULL, 0)) {
                     active_input = 0;
                     werase(openwin);
                     wnoutrefresh(openwin);
