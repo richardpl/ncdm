@@ -40,6 +40,17 @@ Optional switches:
 
 -O file    - Similar as above but with overwritting.
 
+-i file    - Input file with URLs to fetch, each URL is in separate line.
+
+-s speed   - Limit max speed in bytes for downloading URL that follows it.
+
+Example
+-------
+
+Fetch ftp://ftp.foo.com/foo.iso:
+
+ncdm -M 1 -o new.iso -s 4096000 ftp://ftp.foo.com/foo.iso
+
 Building
 --------
 
