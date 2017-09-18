@@ -71,6 +71,12 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         curl_easy_cleanup(ditem->handle);
     }
 
+    if (ditem->url)
+        free(ditem->url);
+
+    if (ditem->escape_url)
+        free(ditem->escape_url);
+
     if (ditem->outputfile)
         fclose(ditem->outputfile);
     if (ditem->outputfilename)
@@ -97,13 +103,13 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         DownloadItem *old;
 
         old = ditem;
-        ditem = ditem->prev;
+        ditem = items_tail = ditem->prev;
         ditem->next = NULL;
         ditem->selected = 1;
         free(old);
     } else {
         free(ditem);
-        items = ditem = NULL;
+        items = ditem = items_tail = NULL;
     }
 
     return ditem;
@@ -254,19 +260,7 @@ static int get_bg(DownloadItem *ditem)
 
 static void uninit()
 {
-    DownloadItem *item = items;
-
-    for (;item;) {
-        curl_easy_cleanup(item->handle);
-        fclose(item->outputfile);
-        free(item->outputfilename);
-        item->outputfilename = NULL;
-        free(item->url);
-        item->url = NULL;
-        free(item->escape_url);
-        item->escape_url = NULL;
-        item = item->next;
-    }
+    DownloadItem *item = items_tail;
 
     wrefresh(openwin);
     delwin(openwin);
@@ -280,10 +274,13 @@ static void uninit()
     delwin(downloads);
     refresh();
     endwin();
+
+    for (;item;)
+        item = delete_ditem(item);
+
     curl_multi_cleanup(mhandle);
     mhandle = NULL;
     curl_global_cleanup();
-    free(items);
     items = NULL;
     items_tail = NULL;
     free(last_search);
@@ -347,14 +344,7 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     } else {
         DownloadItem *prev;
 
-        item = items;
-        for (;;) {
-            if (item->next)
-                item = item->next;
-            else
-                break;
-        }
-
+        item = items_tail;
         item->next = calloc(1, sizeof(DownloadItem));
         if (!item->next) {
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate DownloadItem");
@@ -414,6 +404,8 @@ static int create_handle(int overwrite, const char *newurl, const char *referer,
     }
 
     snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
+    free(escape);
+
     curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, item);
