@@ -998,7 +998,20 @@ int main(int argc, char *argv[])
                 wtimeout(openwin, -1);
                 need_refresh = 1;
             } else if (ret == CURLM_OK) {
-                curl_multi_wait(mhandle, NULL, 0, 1000, &numdfs);
+                struct CURLMsg *m;
+
+                curl_multi_wait(mhandle, NULL, 0, 100, &numdfs);
+
+                do {
+                    int msgq = 0;
+
+                    m = curl_multi_info_read(mhandle, &msgq);
+                    if (m && (m->msg == CURLMSG_DONE)) {
+                        CURL *handle = m->easy_handle;
+                        curl_multi_remove_handle(mhandle, handle);
+                    }
+                } while (m);
+
                 if (numdfs > 0) {
                     need_refresh = 1;
                 } else {
