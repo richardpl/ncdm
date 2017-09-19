@@ -432,18 +432,18 @@ static int create_handle(int overwrite, const char *newurl,
     item->max_speed = speed;
     curl_free(unescape);
 
+    if (!item->outputfilename) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
+        delete_ditem(item);
+        return 1;
+    }
+
     if (!overwrite)
         item->outputfile = outputfile = fopen(item->outputfilename, "rb+");
     if (!outputfile)
         item->outputfile = outputfile = fopen(item->outputfilename, "wb");
     if (!outputfile) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", item->outputfilename);
-        delete_ditem(item);
-        return 1;
-    }
-
-    if (!item->outputfilename) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
         delete_ditem(item);
         return 1;
     }
