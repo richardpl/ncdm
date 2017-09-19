@@ -70,6 +70,18 @@ WINDOW *downloads = NULL;
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
+static char *clonestring(const char *string, size_t string_len)
+{
+    char *clone = malloc((string_len + 1) * sizeof(*string));
+
+    if (clone) {
+        memcpy(clone, string, (string_len + 1) * sizeof(*string));
+        clone[string_len] = '\0';
+    }
+
+    return clone;
+}
+
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
     if (ditem->handle) {
@@ -360,7 +372,7 @@ static int create_handle(int overwrite, const char *newurl,
         item->prev = prev;
     }
 
-    item->url = strdup(newurl);
+    item->url = clonestring(newurl, urllen);
     if (!item->url) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to copy URL");
         delete_ditem(item);
@@ -406,7 +418,7 @@ static int create_handle(int overwrite, const char *newurl,
         snprintf(item->escape_url, escape_url_size, "%.*s/%s", i, newurl, escape);
         curl_free(escape);
     } else {
-        item->escape_url = strdup(newurl);
+        item->escape_url = clonestring(newurl, urllen);
         if (!item->escape_url) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate url");
@@ -416,7 +428,7 @@ static int create_handle(int overwrite, const char *newurl,
     }
 
     ofilename = outname ? outname : lpath;
-    item->outputfilename = strdup(ofilename);
+    item->outputfilename = clonestring(ofilename, strlen(ofilename));
     item->max_speed = speed;
     curl_free(unescape);
 
@@ -737,7 +749,7 @@ int main(int argc, char *argv[])
                         }
                     }
                     free(last_search);
-                    last_search = strdup(string);
+                    last_search = clonestring(string, strlen(string));
                 }
                 need_refresh = 1;
                 string_pos = 0;
