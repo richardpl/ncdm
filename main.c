@@ -217,18 +217,10 @@ static int progressf(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_o
     long int curr_time = time(NULL);
     long int tdiff = curr_time - stime;
 
-    if (item->finished) {
-        item->progress = 100;
-        item->end_time = curr_time;
-        return 0;
-    }
-
     if (dltotal)
         item->progress = 100. * (dlnow + item->downloaded)/(dltotal + item->downloaded);
     else
         item->progress = 0;
-
-    item->finished = (dltotal != 0 && dlnow == dltotal);
 
     if (ultotal)
         item->uprogress = 100. * ulnow/ultotal;
@@ -997,7 +989,9 @@ int main(int argc, char *argv[])
                 wtimeout(downloads, -1);
                 wtimeout(openwin, -1);
                 need_refresh = 1;
-            } else if (ret == CURLM_OK) {
+            }
+
+            if (ret == CURLM_OK) {
                 struct CURLMsg *m;
 
                 curl_multi_wait(mhandle, NULL, 0, 100, &numdfs);
@@ -1007,8 +1001,16 @@ int main(int argc, char *argv[])
 
                     m = curl_multi_info_read(mhandle, &msgq);
                     if (m && (m->msg == CURLMSG_DONE)) {
+                        DownloadItem *item = NULL;
                         CURL *handle = m->easy_handle;
+
                         curl_multi_remove_handle(mhandle, handle);
+                        curl_easy_getinfo(handle, CURLINFO_PRIVATE, &item);
+                        if (item) {
+                            item->finished = 1;
+                            item->end_time = time(NULL);
+                            item->progress = 100;
+                        }
                     }
                 } while (m);
 
