@@ -26,6 +26,7 @@ typedef struct DownloadItem {
     double download_size;
     FILE *outputfile;
     char *outputfilename;
+    char *contenttype;
     double progress;
     double uprogress;
     int speed;
@@ -86,8 +87,9 @@ static char *clonestring(const char *string, size_t string_len)
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
     if (ditem->handle) {
-        if (!ditem->inactive)
+        if (!ditem->inactive && !ditem->finished) {
             curl_multi_remove_handle(mhandle, ditem->handle);
+        }
         curl_easy_cleanup(ditem->handle);
     }
 
@@ -182,6 +184,7 @@ static void write_infowin(DownloadItem *sitem)
     curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->effective_url);
     curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
     curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
+    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_TYPE, &sitem->contenttype);
     curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
     curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
     curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_IP, &sitem->primary_ip);
@@ -195,6 +198,7 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " Max download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
     mvwprintw(infowin, i++, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin, i++, 0, " Content-type: %s ", sitem->contenttype);
     mvwprintw(infowin, i++, 0, " Download size: %f ", sitem->download_size);
     mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
