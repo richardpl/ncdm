@@ -60,6 +60,7 @@ DownloadItem *items_tail = NULL;
 long int start_time = INT_MIN;
 int nb_ditems = 0;
 int string_pos = 0;
+int current_page = 0;
 
 WINDOW *infowin   = NULL;
 WINDOW *openwin   = NULL;
@@ -480,7 +481,7 @@ static int create_handle(int overwrite, const char *newurl,
 static void write_downloads()
 {
     DownloadItem *item = items;
-    int line, cline = -1;
+    int line, cline = -1, offset;
 
     item = items;
     for (line = 0; item; line++) {
@@ -523,7 +524,12 @@ static void write_downloads()
         item = item->next;
     }
 
-    pnoutrefresh(downloads, MAX(cline - (LINES - 2), 0), 0, 0, 0, LINES-1, COLS);
+    if (cline >= 0)
+        offset = MAX(cline - (LINES - 2), 0);
+    else
+        offset = current_page * (LINES - 1);
+
+    pnoutrefresh(downloads, offset, 0, 0, 0, LINES-1, COLS);
 }
 
 static void write_statuswin(int downloading)
@@ -928,6 +934,44 @@ int main(int argc, char *argv[])
                     }
                 }
                 need_refresh = 1;
+            } else if (c == KEY_NPAGE) {
+                if (!sitem) {
+                    current_page++;
+                    current_page = MIN(current_page, nb_ditems / (LINES-1));
+                } else {
+                    if (sitem->next) {
+                        int i;
+
+                        sitem->selected = 0;
+                        sitem = sitem->next;
+                        for (i = 0; i < LINES-1; i++) {
+                            if (!sitem->next)
+                                break;
+                            sitem = sitem->next;
+                        }
+                        sitem->selected = 1;
+                    }
+                }
+                need_refresh = 1;
+            } else if (c == KEY_PPAGE) {
+                if (!sitem) {
+                    current_page--;
+                    current_page = MAX(0, current_page);
+                } else {
+                    if (sitem->prev) {
+                        int i;
+
+                        sitem->selected = 0;
+                        sitem = sitem->prev;
+                        for (i = 0; i < LINES-1; i++) {
+                            if (!sitem->prev)
+                                break;
+                            sitem = sitem->prev;
+                        }
+                        sitem->selected = 1;
+                    }
+                }
+                need_refresh = 1;
             } else if (c == KEY_RIGHT) {
                 if (sitem) {
                     sitem->max_speed += 1024;
@@ -971,6 +1015,7 @@ int main(int argc, char *argv[])
                 help_active = 0;
                 active_input = 0;
                 need_refresh = 1;
+                current_page = 0;
             } else if (c == KEY_MOUSE) {
                 MEVENT mouse_event;
                 int y;
