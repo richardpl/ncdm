@@ -450,6 +450,7 @@ static int create_handle(int overwrite, const char *newurl,
 
     curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
+    curl_easy_setopt(handle, CURLOPT_PRIVATE, item);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, item);
     curl_easy_setopt(handle, CURLOPT_XFERINFOFUNCTION, progressf);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, outputfile);
