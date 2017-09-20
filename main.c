@@ -77,21 +77,24 @@ DownloadItem *sitem = NULL;
 
 long int start_time = INT_MIN;
 int nb_ditems = 0;
+int nb_logs = 0;
 int string_pos = 0;
 int current_page = 0;
 int still_running = 0;
 int help_active = 0;
 int info_active = 0;
+int log_active  = 0;
 int downloading = 0;
 
 pthread_t curses_thread;
 pthread_t curl_thread;
 
-WINDOW *infowin   = NULL;
-WINDOW *openwin   = NULL;
-WINDOW *helpwin   = NULL;
-WINDOW *statuswin = NULL;
 WINDOW *downloads = NULL;
+WINDOW *helpwin   = NULL;
+WINDOW *infowin   = NULL;
+WINDOW *logwin    = NULL;
+WINDOW *openwin   = NULL;
+WINDOW *statuswin = NULL;
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -175,6 +178,23 @@ static void write_status(int color, const char *fmt, ...)
     wnoutrefresh(statuswin);
 }
 
+static void write_log(int color, const char *fmt, ...)
+{
+    int y, y0, x;
+    va_list vl;
+
+    getyx(logwin, y0, x);
+    wattrset(logwin, color);
+
+    va_start(vl, fmt);
+    vwprintw(logwin, fmt, vl);
+    va_end(vl);
+
+    getyx(logwin, y, x);
+    nb_logs += y - y0;
+    (void)x;
+}
+
 static void write_helpwin()
 {
     int i = 0;
@@ -189,6 +209,7 @@ static void write_helpwin()
     mvwaddstr(helpwin, i++, 0, " D - delete selectedd download from the list ");
     mvwaddstr(helpwin, i++, 0, " R - set referer for the selected download ");
     mvwaddstr(helpwin, i++, 0, " i - show extra info for selected download ");
+    mvwaddstr(helpwin, i++, 0, " l - show log of all downloads ");
     mvwaddstr(helpwin, i++, 0, " / - search for download ");
     mvwaddstr(helpwin, i++, 0, " n - repeat last search ");
     mvwaddstr(helpwin, i++, 0, " N - repeat last search backward ");
@@ -311,17 +332,12 @@ static void uninit()
     pthread_cancel(curl_thread);
     pthread_cancel(curses_thread);
 
-    wrefresh(openwin);
+    delwin(logwin);
     delwin(openwin);
-    wrefresh(infowin);
     delwin(infowin);
-    wrefresh(helpwin);
     delwin(helpwin);
-    wrefresh(statuswin);
     delwin(statuswin);
-    prefresh(downloads, 0, 0, 0, 0, 0, 0);
     delwin(downloads);
-    refresh();
     endwin();
 
     for (;item;)
@@ -573,6 +589,11 @@ static void write_downloads()
     pnoutrefresh(downloads, offset, 0, 0, 0, LINES-1, COLS);
 }
 
+static void write_logwin()
+{
+    pnoutrefresh(logwin, MAX(nb_logs - LINES, 0), 0, 0, 0, LINES - 1, COLS);
+}
+
 static void write_statuswin(int downloading)
 {
     wattrset(statuswin, COLOR_PAIR(7));
@@ -611,6 +632,11 @@ static void init_windows(int downloading)
         error(-1, "Failed to create downloads window.\n");
     }
 
+    logwin = newpad(4096, COLS);
+    if (!logwin) {
+        error(-1, "Failed to create log window.\n");
+    }
+
     statuswin = newwin(1, COLS, LINES-1, 0);
     if (!statuswin) {
         error(-1, "Failed to create status window.\n");
@@ -643,10 +669,11 @@ static void init_windows(int downloading)
     keypad(openwin,    TRUE);
 
     leaveok(downloads, TRUE);
-    leaveok(statuswin, TRUE);
     leaveok(helpwin,   TRUE);
     leaveok(infowin,   TRUE);
+    leaveok(logwin,    TRUE);
     leaveok(openwin,   TRUE);
+    leaveok(statuswin, TRUE);
 }
 
 static int parse_file(char *filename)
@@ -689,7 +716,7 @@ static void check_rc(const char *where, CURLMcode code)
         case CURLM_BAD_SOCKET:      s = "CURLM_BAD_SOCKET";      break;
         default:                    s = "CURLM_unknown";         break;
         }
-        write_status(A_REVERSE | COLOR_PAIR(1), "%s returns %s", where, s);
+        write_log(COLOR_PAIR(1), "%s returns %s\n", where, s);
     }
 }
 
@@ -765,6 +792,7 @@ static void check_multi_info()
             remove_handle(ditem);
             ditem->finished = 1;
             ditem->progress = 100.;
+            write_log(COLOR_PAIR(7), "Finished downloading %s.\n", ditem->outputfilename);
         }
     }
 }
@@ -950,6 +978,8 @@ static void *do_ncurses(void *unused)
                 help_active = !help_active;
             } else if (c == 'i') {
                 info_active = !info_active;
+            } else if (c == 'l') {
+                log_active = !log_active;
             } else if (c == 'A' || c == 'a') {
                 if (c == 'A')
                     overwritefile = 1;
@@ -1150,6 +1180,7 @@ static void *do_ncurses(void *unused)
                     sitem->selected = 1;
                 }
             } else if (c == KEY_RESIZE) {
+                delwin(logwin);
                 delwin(openwin);
                 delwin(infowin);
                 delwin(helpwin);
@@ -1187,6 +1218,9 @@ static void *do_ncurses(void *unused)
 
         if (info_active)
             write_infowin(sitem);
+
+        if (log_active)
+            write_logwin();
 
         if (help_active)
             write_helpwin();
@@ -1250,7 +1284,6 @@ int main(int argc, char *argv[])
         init_pair(6, COLOR_MAGENTA, COLOR_BLACK);
         init_pair(7, COLOR_WHITE,   COLOR_BLACK);
     }
-
 
     if (parse_parameters(argc, argv, &max_total_connections, &max_host_connections))
         write_downloads();
