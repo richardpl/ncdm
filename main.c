@@ -221,9 +221,9 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " Current download speed: %ldB/s ", sitem->speed);
     mvwprintw(infowin, i++, 0, " Max download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
-    mvwprintw(infowin, i++, 0, " Content-length: %f ", sitem->contentlength);
     mvwprintw(infowin, i++, 0, " Content-type: %s ", sitem->contenttype);
-    mvwprintw(infowin, i++, 0, " Download size: %f ", sitem->download_size);
+    mvwprintw(infowin, i++, 0, " Content-length: %f ", sitem->contentlength);
+    mvwprintw(infowin, i++, 0, " Download size:  %f ", sitem->download_size);
     mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
     mvwprintw(infowin, i++, 0, " Primary port: %ld ", sitem->primary_port);
