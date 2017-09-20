@@ -60,6 +60,7 @@ typedef struct SockInfo {
 #define PARAM_OUTPUTOVER 4
 #define PARAM_INPUTFILE  5
 #define PARAM_MAXSPEED   6
+#define PARAM_MAXHCONN   7
 
 #define MAX_STRING_LEN 16384
 
@@ -693,11 +694,12 @@ static void check_rc(const char *where, CURLMcode code)
 }
 
 static int parse_parameters(int argc, char *argv[],
-                            long *max_total_connections)
+                            long *max_total_connections,
+                            long *max_host_connections)
 {
     const char *referer = NULL;
     const char *output = NULL;
-    long max = 0, speed = 0;
+    long max = 0, maxh = 0, speed = 0;
     int overwritefile = 0;
     int i, param = 0;
 
@@ -716,6 +718,8 @@ static int parse_parameters(int argc, char *argv[],
             param = PARAM_INPUTFILE;
         } else if (!strcmp(argv[i], "-s")) {
             param = PARAM_MAXSPEED;
+        } else if (!strcmp(argv[i], "-H")) {
+            param = PARAM_MAXHCONN;
         } else {
             if (param == PARAM_REFERER) {
                 referer = argv[i];
@@ -723,6 +727,8 @@ static int parse_parameters(int argc, char *argv[],
                 output = argv[i];
             } else if (param == PARAM_MAXTCONN) {
                 max = atol(argv[i]);
+            } else if (param == PARAM_MAXHCONN) {
+                maxh = atol(argv[i]);
             } else if (param == PARAM_INPUTFILE) {
                 parse_file(argv[i]);
             } else if (param == PARAM_MAXSPEED) {
@@ -738,6 +744,7 @@ static int parse_parameters(int argc, char *argv[],
     }
 
     *max_total_connections = max;
+    *max_host_connections = maxh;
 
     return i;
 }
@@ -1192,6 +1199,7 @@ static void *do_ncurses(void *unused)
 int main(int argc, char *argv[])
 {
     long max_total_connections = 0;
+    long max_host_connections = 0;
 
     signal(SIGINT, finish);
 
@@ -1244,10 +1252,11 @@ int main(int argc, char *argv[])
     }
 
 
-    if (parse_parameters(argc, argv, &max_total_connections))
+    if (parse_parameters(argc, argv, &max_total_connections, &max_host_connections))
         write_downloads();
 
     curl_multi_setopt(mhandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, max_total_connections);
+    curl_multi_setopt(mhandle, CURLMOPT_MAX_HOST_CONNECTIONS, max_host_connections);
 
     write_statuswin(downloading);
     doupdate();

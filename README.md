@@ -36,7 +36,10 @@ Optional switches:
              Setting this to 0, will use new connection for each new download.
              Set this to 1 if you want to download up to one item at same time.
 
--o file    - This one set output file, not overwritting it if it exist.
+-H number  - Set max number of connections available at same time to
+             single host:port combination.
+
+-o file    - Set output file, not overwritting it if it exist.
 
 -O file    - Similar as above but with overwritting.
 
