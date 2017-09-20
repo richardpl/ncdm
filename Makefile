@@ -1,7 +1,7 @@
 PREFIX=/usr/local
 
-CFLAGS  = -D_POSIX_C_SOURCE=199309L -D_FILE_OFFSET_BITS=64 -O3 -std=c99 -Wall -Wextra -g `curl-config --cflags`
-LIBS    = `curl-config --libs` -lncursesw
+CFLAGS  = -D_POSIX_C_SOURCE=200809L -D_FILE_OFFSET_BITS=64 -O3 -std=c99 -Wall -Wextra -g `curl-config --cflags`
+LIBS    = `curl-config --libs` -lncursesw -levent -lpthread
 SOURCES = main.c
 OBJECTS = main.o
 

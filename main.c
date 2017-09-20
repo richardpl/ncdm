@@ -1,11 +1,13 @@
 #include <assert.h>
 #include <curl/curl.h>
 #include <curses.h>
-#include <math.h>
+#include <event.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -39,6 +41,15 @@ typedef struct DownloadItem {
     struct DownloadItem *prev;
 } DownloadItem;
 
+typedef struct SockInfo {
+    curl_socket_t sockfd;
+    CURL *easy;
+    struct event *ev;
+    long timeout;
+    int action;
+    int evset;
+} SockInfo;
+
 #define ENTERING_URL     1
 #define ENTERING_REFERER 2
 #define ENTERING_SEARCH  3
@@ -56,12 +67,24 @@ char *last_search = NULL;
 char *string = NULL;
 int start_all = 0;
 CURLM *mhandle = NULL;
+struct event_base *eventbase = NULL;
+struct event *timerevent = NULL;
+
 DownloadItem *items = NULL;
 DownloadItem *items_tail = NULL;
+DownloadItem *sitem = NULL;
+
 long int start_time = INT_MIN;
 int nb_ditems = 0;
 int string_pos = 0;
 int current_page = 0;
+int still_running = 0;
+int help_active = 0;
+int info_active = 0;
+int downloading = 0;
+
+pthread_t curses_thread;
+pthread_t curl_thread;
 
 WINDOW *infowin   = NULL;
 WINDOW *openwin   = NULL;
@@ -244,8 +267,6 @@ static int progressf(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_o
     else
         item->uprogress = 0;
 
-    item->ufinished = (ultotal != 0 && ulnow == ultotal);
-
     if (tdiff != 0)
         item->speed = dlnow / tdiff;
     else
@@ -286,6 +307,9 @@ static void uninit()
 {
     DownloadItem *item = items_tail;
 
+    pthread_cancel(curl_thread);
+    pthread_cancel(curses_thread);
+
     wrefresh(openwin);
     delwin(openwin);
     wrefresh(infowin);
@@ -311,6 +335,11 @@ static void uninit()
     last_search = NULL;
     free(string);
     string = NULL;
+
+    event_free(timerevent);
+    timerevent = NULL;
+    event_base_free(eventbase);
+    eventbase = NULL;
 }
 
 static void error(int sig, const char *error_msg)
@@ -329,7 +358,7 @@ static void finish(int sig)
     exit(sig);
 }
 
-static int create_handle(int overwrite, const char *newurl,
+static int create_handle(int overwritefile, const char *newurl,
                          const char *referer, const char *outname,
                          curl_off_t speed)
 {
@@ -398,7 +427,14 @@ static int create_handle(int overwrite, const char *newurl,
         return 1;
     }
 
-    lpath = strrchr(unescape, '/') + 1;
+    lpath = strrchr(unescape, '/');
+    if (!lpath) {
+        write_status(A_REVERSE | COLOR_PAIR(1), "Invalid URL");
+        delete_ditem(item);
+        return 1;
+    }
+
+    lpath += 1;
     if (!strcmp(unescape, newurl)) {
         char *escape = curl_easy_escape(handle, lpath, 0);
         if (!escape) {
@@ -443,7 +479,7 @@ static int create_handle(int overwrite, const char *newurl,
         return 1;
     }
 
-    if (!overwrite)
+    if (!overwritefile)
         item->outputfile = outputfile = fopen(item->outputfilename, "rb+");
     if (!outputfile)
         item->outputfile = outputfile = fopen(item->outputfilename, "wb");
@@ -465,7 +501,7 @@ static int create_handle(int overwrite, const char *newurl,
     if (referer)
         curl_easy_setopt(handle, CURLOPT_REFERER, referer);
 
-    if (!overwrite) {
+    if (!overwritefile) {
         curl_off_t from;
         fseek(outputfile, 0, SEEK_END);
         from = item->downloaded = ftell(outputfile);
@@ -550,12 +586,21 @@ static void write_statuswin(int downloading)
 static void add_handle(DownloadItem *ditem)
 {
     curl_off_t from;
+    int still_running;
 
     fseek(ditem->outputfile, 0, SEEK_END);
     from = ditem->downloaded = ftell(ditem->outputfile);
     curl_easy_setopt(ditem->handle, CURLOPT_RESUME_FROM_LARGE, from);
     ditem->start_time = time(NULL);
+    ditem->end_time = 0;
     curl_multi_add_handle(mhandle, ditem->handle);
+    curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
+}
+
+static void remove_handle(DownloadItem *ditem)
+{
+    curl_multi_remove_handle(mhandle, ditem->handle);
+    ditem->end_time = time(NULL);
 }
 
 static void init_windows(int downloading)
@@ -586,8 +631,8 @@ static void init_windows(int downloading)
     }
 
     if (downloading) {
-        wtimeout(downloads, 0);
-        wtimeout(openwin, 0);
+        wtimeout(downloads, 100);
+        wtimeout(openwin, 100);
     } else {
         wtimeout(downloads, -1);
         wtimeout(openwin, -1);
@@ -621,13 +666,39 @@ static int parse_file(char *filename)
     return 0;
 }
 
+typedef struct _ConnInfo
+{
+  CURL *easy;
+  char *url;
+  char error[CURL_ERROR_SIZE];
+} ConnInfo;
+
+static void check_rc(const char *where, CURLMcode code)
+{
+    if (CURLM_OK != code) {
+        const char *s;
+
+        switch (code) {
+        case CURLM_BAD_HANDLE:      s = "CURLM_BAD_HANDLE";      break;
+        case CURLM_BAD_EASY_HANDLE: s = "CURLM_BAD_EASY_HANDLE"; break;
+        case CURLM_OUT_OF_MEMORY:   s = "CURLM_OUT_OF_MEMORY";   break;
+        case CURLM_INTERNAL_ERROR:  s = "CURLM_INTERNAL_ERROR";  break;
+        case CURLM_UNKNOWN_OPTION:  s = "CURLM_UNKNOWN_OPTION";  break;
+        case CURLM_LAST:            s = "CURLM_LAST";            break;
+        case CURLM_BAD_SOCKET:      s = "CURLM_BAD_SOCKET";      break;
+        default:                    s = "CURLM_unknown";         break;
+        }
+        write_status(A_REVERSE | COLOR_PAIR(1), "%s returns %s", where, s);
+    }
+}
+
 static int parse_parameters(int argc, char *argv[],
                             long *max_total_connections)
 {
     const char *referer = NULL;
     const char *output = NULL;
     long max = 0, speed = 0;
-    int overwrite = 0;
+    int overwritefile = 0;
     int i, param = 0;
 
     for (i = 1; i < argc; i++) {
@@ -635,12 +706,12 @@ static int parse_parameters(int argc, char *argv[],
             param = PARAM_REFERER;
         } else if (!strcmp(argv[i], "-o")) {
             param = PARAM_OUTPUT;
-            overwrite = 0;
+            overwritefile = 0;
         } else if (!strcmp(argv[i], "-M")) {
             param = PARAM_MAXTCONN;
         } else if (!strcmp(argv[i], "-O")) {
             param = PARAM_OUTPUTOVER;
-            overwrite = 1;
+            overwritefile = 1;
         } else if (!strcmp(argv[i], "-i")) {
             param = PARAM_INPUTFILE;
         } else if (!strcmp(argv[i], "-s")) {
@@ -657,9 +728,9 @@ static int parse_parameters(int argc, char *argv[],
             } else if (param == PARAM_MAXSPEED) {
                 speed = atol(argv[i]);
             } else {
-                create_handle(overwrite, argv[i], referer, output, speed);
+                create_handle(overwritefile, argv[i], referer, output, speed);
                 referer = output = NULL;
-                overwrite = 0;
+                overwritefile = 0;
                 speed = 0;
             }
             param = 0;
@@ -671,25 +742,483 @@ static int parse_parameters(int argc, char *argv[],
     return i;
 }
 
+static void check_multi_info()
+{
+    char *eff_url;
+    CURLMsg *msg;
+    int msgs_left;
+    DownloadItem *ditem;
+    CURL *easy;
+
+    while ((msg = curl_multi_info_read(mhandle, &msgs_left))) {
+        if (msg->msg == CURLMSG_DONE) {
+            easy = msg->easy_handle;
+            curl_easy_getinfo(easy, CURLINFO_PRIVATE, &ditem);
+            curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &eff_url);
+            remove_handle(ditem);
+            ditem->finished = 1;
+            ditem->progress = 100.;
+        }
+    }
+}
+
+static void timer_cb(int fd, short kind, void *userp)
+{
+    CURLMcode rc;
+    (void)fd;
+    (void)kind;
+    (void)userp;
+
+    rc = curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
+    check_rc("timer_cb:", rc);
+    check_multi_info();
+    downloading = still_running > 0;
+}
+
+static int multi_timer_cb(CURLM *multi, long timeout_ms, void *unused)
+{
+    (void)multi;
+    (void)unused;
+
+    if (timeout_ms > 0) {
+        struct timeval timeout;
+
+        timeout.tv_sec = timeout_ms/1000;
+        timeout.tv_usec = (timeout_ms%1000)*1000;
+
+        evtimer_add(timerevent, &timeout);
+    } else if (timeout_ms == 0) {
+        timer_cb(0, 0, NULL);
+    }
+
+    return 0;
+}
+
+static void remove_sock(SockInfo *f)
+{
+    if (f) {
+        if (f->evset)
+            event_free(f->ev);
+        free(f);
+    }
+}
+
+static void event_cb(int fd, short kind, void *userp)
+{
+    CURLMcode rc;
+    (void)userp;
+
+    int action = (kind & EV_READ ? CURL_CSELECT_IN : 0) | (kind & EV_WRITE ? CURL_CSELECT_OUT : 0);
+
+    rc = curl_multi_socket_action(mhandle, fd, action, &still_running);
+    check_rc("event_cb:", rc);
+
+    check_multi_info();
+    if (still_running <= 0) {
+        if (evtimer_pending(timerevent, NULL)) {
+            evtimer_del(timerevent);
+        }
+    }
+}
+
+static void set_sock(SockInfo *f, curl_socket_t s, CURL *e, int act)
+{
+    int kind = (act&CURL_POLL_IN?EV_READ:0)|(act&CURL_POLL_OUT?EV_WRITE:0)|EV_PERSIST;
+
+    f->sockfd = s;
+    f->action = act;
+    f->easy = e;
+    if (f->evset)
+        event_free(f->ev);
+    f->ev = event_new(eventbase, f->sockfd, kind, event_cb, NULL);
+    f->evset = 1;
+    event_add(f->ev, NULL);
+}
+
+static void add_sock(curl_socket_t s, CURL *easy, int action)
+{
+    SockInfo *fdp = calloc(1, sizeof(SockInfo));
+
+    set_sock(fdp, s, easy, action);
+    curl_multi_assign(mhandle, s, fdp);
+}
+
+static int sock_cb(CURL *e, curl_socket_t s, int what, void *cbp, void *sockp)
+{
+    SockInfo *fdp = (SockInfo*)sockp;
+    (void)cbp;
+
+    if (what == CURL_POLL_REMOVE) {
+        remove_sock(fdp);
+    } else {
+        if (!fdp) {
+            add_sock(s, e, what);
+        } else {
+            set_sock(fdp, s, e, what);
+        }
+    }
+
+    return 0;
+}
+
+static void *do_curl(void *unused)
+{
+    (void)unused;
+
+    for (;;) {
+        sleep(1);
+        event_base_loop(eventbase, 0);
+    }
+
+    return NULL;
+}
+
+static void *do_ncurses(void *unused)
+{
+    int active_input = 0;
+    int overwritefile = 0;
+    (void)unused;
+
+    for (;;) {
+        int c;
+
+        if (active_input) {
+            int skip_y, skip_x;
+
+            if (active_input == ENTERING_URL)
+                mvwaddstr(openwin, 0, 0, "URL: ");
+            else if (active_input == ENTERING_REFERER)
+                mvwaddstr(openwin, 0, 0, "Referer: ");
+            else if (active_input == ENTERING_SEARCH)
+                mvwaddstr(openwin, 0, 0, "Search: ");
+            getyx(openwin, skip_y, skip_x);
+
+            c = wgetch(openwin);
+            if (c == KEY_ENTER || c == '\n' || c == '\r') {
+                if (active_input == ENTERING_URL && create_handle(overwritefile, string, NULL, NULL, 0)) {
+                    active_input = 0;
+                    werase(openwin);
+                    wnoutrefresh(openwin);
+                    doupdate();
+                    continue;
+                } else if (active_input == ENTERING_REFERER) {
+                    curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
+                } else if (active_input == ENTERING_SEARCH) {
+                    DownloadItem *nsitem = items;
+
+                    for (;nsitem; nsitem = nsitem->next) {
+                        if (strstr(nsitem->outputfilename, string)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            break;
+                        }
+                    }
+                    free(last_search);
+                    last_search = clonestring(string, strlen(string));
+                }
+                string_pos = 0;
+                string[0] = '\0';
+                active_input = 0;
+                werase(openwin);
+            } else if (c == KEY_BACKSPACE || c == KEY_DC || c == '\b' || c == 127 || c == 8) {
+                werase(openwin);
+                if (string_pos > 0) {
+                    string[string_pos - 1] = 0;
+                    string_pos--;
+                }
+            } else if (!(c & KEY_CODE_YES)) {
+                if (string_pos < MAX_STRING_LEN - 1) {
+                    string[string_pos++] = c;
+                    string[string_pos] = 0;
+                }
+            }
+            mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
+            mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
+        } else if (!active_input) {
+            c = wgetch(downloads);
+
+            if (c == KEY_F(1) || c == '?') {
+                help_active = !help_active;
+            } else if (c == 'i') {
+                info_active = !info_active;
+            } else if (c == 'A' || c == 'a') {
+                if (c == 'A')
+                    overwritefile = 1;
+                else
+                    overwritefile = 0;
+
+                if (!active_input) {
+                    active_input = ENTERING_URL;
+                    continue;
+                }
+            } else if (c == 'Q') {
+                finish(0);
+            } else if (c == 'S') {
+                downloading = !downloading;
+                if (downloading && items) {
+                    DownloadItem *item = items;
+
+                    wtimeout(downloads, 100);
+                    wtimeout(openwin, 100);
+                    start_time = time(NULL);
+
+                    for (;item;) {
+                        if (item->paused && !item->inactive && !item->finished) {
+                            item->paused = 0;
+                            add_handle(item);
+                        }
+                        item = item->next;
+                    }
+                } else if (items) {
+                    DownloadItem *item = items;
+                    for (;item;) {
+                        if (!item->paused && !item->inactive && !item->finished) {
+                            item->paused = 1;
+                            remove_handle(item);
+                        }
+                        item = item->next;
+                    }
+
+                    wtimeout(downloads, -1);
+                    wtimeout(openwin, -1);
+                }
+            } else if (c == 'h') {
+                if (sitem && sitem->inactive) {
+                    sitem->inactive = 0;
+                    fseek(sitem->outputfile, sitem->downloaded, SEEK_SET);
+                    curl_easy_setopt(sitem->handle, CURLOPT_RESUME_FROM_LARGE, ftell(sitem->outputfile));
+                    curl_multi_add_handle(mhandle, sitem->handle);
+                }
+            } else if (c == 'D') {
+                if (sitem) {
+                    sitem = delete_ditem(sitem);
+                    nb_ditems--;
+                    werase(downloads);
+                }
+            } else if (c == 'R') {
+                if (sitem) {
+                    if (!active_input) {
+                        active_input = ENTERING_REFERER;
+                        continue;
+                    }
+                }
+            } else if (c == '/') {
+                if (!active_input) {
+                    active_input = ENTERING_SEARCH;
+                    continue;
+                }
+            } else if (c == 'n') {
+                if (last_search) {
+                    DownloadItem *nsitem = sitem ? sitem->next : items;
+
+                    for (;nsitem; nsitem = nsitem->next) {
+                        if (strstr(nsitem->outputfilename, last_search)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            break;
+                        }
+                    }
+                }
+            } else if (c == 'N') {
+                if (last_search) {
+                    DownloadItem *nsitem = sitem ? sitem->prev : items_tail;
+
+                    for (;nsitem; nsitem = nsitem->prev) {
+                        if (strstr(nsitem->outputfilename, last_search)) {
+                            if (sitem)
+                                sitem->selected = 0;
+                            sitem = nsitem;
+                            sitem->selected = 1;
+                            break;
+                        }
+                    }
+                }
+            } else if (c == 'H') {
+                if (sitem && !sitem->inactive) {
+                    sitem->inactive = 1;
+                    sitem->finished = 0;
+                    remove_handle(sitem);
+                }
+            } else if (c == 'p') {
+                if (sitem && !sitem->inactive && !sitem->finished) {
+                    if (!sitem->paused) {
+                        remove_handle(sitem);
+                    }
+                    sitem->paused = !sitem->paused;
+                    if (!sitem->paused) {
+                        wtimeout(downloads, 100);
+                        wtimeout(openwin, 100);
+                        downloading = 1;
+                        add_handle(sitem);
+                        if (start_time == INT_MIN)
+                            start_time = sitem->start_time;
+                    }
+                }
+            } else if (c == KEY_DOWN) {
+                if (!sitem) {
+                    sitem = items;
+                    if (sitem)
+                        sitem->selected = 1;
+                } else {
+                    if (sitem->next) {
+                        sitem->selected = 0;
+                        sitem = sitem->next;
+                        sitem->selected = 1;
+                    }
+                }
+            } else if (c == KEY_UP) {
+                if (!sitem) {
+                    sitem = items;
+                    if (sitem)
+                        sitem->selected = 1;
+                } else {
+                    if (sitem->prev) {
+                        sitem->selected = 0;
+                        sitem = sitem->prev;
+                        sitem->selected = 1;
+                    }
+                }
+            } else if (c == KEY_NPAGE) {
+                if (!sitem) {
+                    current_page++;
+                    current_page = MIN(current_page, nb_ditems / (LINES-1));
+                } else {
+                    if (sitem->next) {
+                        int i;
+
+                        sitem->selected = 0;
+                        sitem = sitem->next;
+                        for (i = 0; i < LINES-1; i++) {
+                            if (!sitem->next)
+                                break;
+                            sitem = sitem->next;
+                        }
+                        sitem->selected = 1;
+                    }
+                }
+            } else if (c == KEY_PPAGE) {
+                if (!sitem) {
+                    current_page--;
+                    current_page = MAX(0, current_page);
+                } else {
+                    if (sitem->prev) {
+                        int i;
+
+                        sitem->selected = 0;
+                        sitem = sitem->prev;
+                        for (i = 0; i < LINES-1; i++) {
+                            if (!sitem->prev)
+                                break;
+                            sitem = sitem->prev;
+                        }
+                        sitem->selected = 1;
+                    }
+                }
+            } else if (c == KEY_RIGHT) {
+                if (sitem) {
+                    sitem->max_speed += 1024;
+                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                }
+            } else if (c == KEY_LEFT) {
+                if (sitem) {
+                    sitem->max_speed = MAX(0, sitem->max_speed - 1024);
+                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                }
+            } else if (c == KEY_HOME) {
+                if (sitem && sitem != items) {
+                    sitem->selected = 0;
+                    sitem = items;
+                    sitem->selected = 1;
+                }
+            } else if (c == KEY_END) {
+                if (sitem) {
+                    sitem->selected = 0;
+                    for (;sitem->next;) {
+                        sitem = sitem->next;
+                    }
+                    sitem->selected = 1;
+                }
+            } else if (c == KEY_RESIZE) {
+                delwin(openwin);
+                delwin(infowin);
+                delwin(helpwin);
+                delwin(statuswin);
+                delwin(downloads);
+                clear();
+                refresh();
+                endwin();
+
+                init_windows(downloading);
+
+                help_active = 0;
+                active_input = 0;
+                current_page = 0;
+            } else if (c == KEY_MOUSE) {
+                MEVENT mouse_event;
+                int y;
+
+                if (getmouse(&mouse_event) == OK) {
+                    if (sitem)
+                        sitem->selected = 0;
+                    sitem = items;
+                    for (y = 0; sitem->next; y++) {
+                        if (y == mouse_event.y)
+                            break;
+                        sitem = sitem->next;
+                    }
+                    sitem->selected = 1;
+                }
+            }
+        }
+
+        write_downloads();
+        write_statuswin(downloading);
+
+        if (info_active)
+            write_infowin(sitem);
+
+        if (help_active)
+            write_helpwin();
+
+        doupdate();
+    }
+    return NULL;
+}
+
 int main(int argc, char *argv[])
 {
-    DownloadItem *sitem = NULL;
-    int downloading = 0, help_active = 0, overwrite = 0;
-    int active_input = 0, info_active = 0;
-    int need_refresh = 0;
     long max_total_connections = 0;
 
     signal(SIGINT, finish);
+
+    mhandle = curl_multi_init();
+    if (!mhandle) {
+        error(-1, "Failed to create curl multi handle.\n");
+    }
+
+    eventbase = event_base_new();
+    if (!eventbase) {
+        error(-1, "Failed to create new event base.\n");
+    }
+
+    timerevent = evtimer_new(eventbase, timer_cb, NULL);
+    if (!timerevent) {
+        error(-1, "Failed to create new event timer.\n");
+    }
 
     string = calloc(MAX_STRING_LEN, sizeof(*string));
     if (!string) {
         error(-1, "Failed to allocate string storage.\n");
     }
 
-    mhandle = curl_multi_init();
-    if (!mhandle) {
-        error(-1, "Failed to create curl multi handle.\n");
-    }
+    curl_multi_setopt(mhandle, CURLMOPT_SOCKETFUNCTION, sock_cb);
+    curl_multi_setopt(mhandle, CURLMOPT_SOCKETDATA, NULL);
+    curl_multi_setopt(mhandle, CURLMOPT_TIMERFUNCTION, multi_timer_cb);
+    curl_multi_setopt(mhandle, CURLMOPT_TIMERDATA, NULL);
 
     initscr();
     nonl();
@@ -723,385 +1252,11 @@ int main(int argc, char *argv[])
     write_statuswin(downloading);
     doupdate();
 
-    for (;;) {
-        int c;
+    pthread_create(&curses_thread, NULL, do_ncurses, NULL);
+    pthread_create(&curl_thread, NULL, do_curl, NULL);
 
-        if (active_input) {
-            int skip_y, skip_x;
-
-            if (active_input == ENTERING_URL)
-                mvwaddstr(openwin, 0, 0, "URL: ");
-            else if (active_input == ENTERING_REFERER)
-                mvwaddstr(openwin, 0, 0, "Referer: ");
-            else if (active_input == ENTERING_SEARCH)
-                mvwaddstr(openwin, 0, 0, "Search: ");
-            getyx(openwin, skip_y, skip_x);
-
-            c = wgetch(openwin);
-            if (c == KEY_ENTER || c == '\n' || c == '\r') {
-                if (active_input == ENTERING_URL && create_handle(overwrite, string, NULL, NULL, 0)) {
-                    active_input = 0;
-                    werase(openwin);
-                    wnoutrefresh(openwin);
-                    doupdate();
-                    continue;
-                } else if (active_input == ENTERING_REFERER) {
-                    curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
-                } else if (active_input == ENTERING_SEARCH) {
-                    DownloadItem *nsitem = items;
-
-                    for (;nsitem; nsitem = nsitem->next) {
-                        if (strstr(nsitem->outputfilename, string)) {
-                            if (sitem)
-                                sitem->selected = 0;
-                            sitem = nsitem;
-                            sitem->selected = 1;
-                            break;
-                        }
-                    }
-                    free(last_search);
-                    last_search = clonestring(string, strlen(string));
-                }
-                need_refresh = 1;
-                string_pos = 0;
-                string[0] = '\0';
-                active_input = 0;
-                werase(openwin);
-            } else if (c == KEY_BACKSPACE || c == KEY_DC || c == '\b' || c == 127 || c == 8) {
-                werase(openwin);
-                if (string_pos > 0) {
-                    string[string_pos - 1] = 0;
-                    string_pos--;
-                }
-                need_refresh = 1;
-            } else if (!(c & KEY_CODE_YES)) {
-                if (string_pos < MAX_STRING_LEN - 1) {
-                    string[string_pos++] = c;
-                    string[string_pos] = 0;
-                }
-                need_refresh = 1;
-            }
-            mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
-            mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
-        } else if (!active_input) {
-            c = wgetch(downloads);
-
-            if (c == KEY_F(1) || c == '?') {
-                help_active = !help_active;
-                need_refresh = 1;
-            } else if (c == 'i') {
-                info_active = !info_active;
-                need_refresh = 1;
-            } else if (c == 'A' || c == 'a') {
-                if (c == 'A')
-                    overwrite = 1;
-                else
-                    overwrite = 0;
-
-                if (!active_input) {
-                    active_input = ENTERING_URL;
-                    continue;
-                }
-            } else if (c == 'Q') {
-                finish(0);
-            } else if (c == 'S') {
-                downloading = !downloading;
-                if (downloading && items) {
-                    DownloadItem *item = items;
-
-                    for (;item;) {
-                        if (item->paused && !item->inactive && !item->finished) {
-                            add_handle(item);
-                            item->paused = 0;
-                        }
-                        item = item->next;
-                    }
-
-                    start_time = time(NULL);
-                    wtimeout(downloads, 0);
-                    wtimeout(openwin, 0);
-                } else if (items) {
-                    DownloadItem *item = items;
-                    for (;item;) {
-                        if (!item->paused && !item->inactive && !item->finished) {
-                            item->paused = 1;
-                            curl_multi_remove_handle(mhandle, item->handle);
-                        }
-                        item = item->next;
-                    }
-
-                    wtimeout(downloads, -1);
-                    wtimeout(openwin, -1);
-                }
-            } else if (c == 'h') {
-                if (sitem && sitem->inactive) {
-                    sitem->inactive = 0;
-                    fseek(sitem->outputfile, sitem->downloaded, SEEK_SET);
-                    curl_easy_setopt(sitem->handle, CURLOPT_RESUME_FROM_LARGE, ftell(sitem->outputfile));
-                    curl_multi_add_handle(mhandle, sitem->handle);
-                    need_refresh = 1;
-                }
-            } else if (c == 'D') {
-                if (sitem) {
-                    sitem = delete_ditem(sitem);
-                    nb_ditems--;
-                    werase(downloads);
-                    need_refresh = 1;
-                }
-            } else if (c == 'R') {
-                if (sitem) {
-                    if (!active_input) {
-                        active_input = ENTERING_REFERER;
-                        continue;
-                    }
-                }
-            } else if (c == '/') {
-                if (!active_input) {
-                    active_input = ENTERING_SEARCH;
-                    continue;
-                }
-            } else if (c == 'n') {
-                if (last_search) {
-                    DownloadItem *nsitem = sitem ? sitem->next : items;
-
-                    for (;nsitem; nsitem = nsitem->next) {
-                        if (strstr(nsitem->outputfilename, last_search)) {
-                            if (sitem)
-                                sitem->selected = 0;
-                            sitem = nsitem;
-                            sitem->selected = 1;
-                            need_refresh = 1;
-                            break;
-                        }
-                    }
-                }
-            } else if (c == 'N') {
-                if (last_search) {
-                    DownloadItem *nsitem = sitem ? sitem->prev : items_tail;
-
-                    for (;nsitem; nsitem = nsitem->prev) {
-                        if (strstr(nsitem->outputfilename, last_search)) {
-                            if (sitem)
-                                sitem->selected = 0;
-                            sitem = nsitem;
-                            sitem->selected = 1;
-                            need_refresh = 1;
-                            break;
-                        }
-                    }
-                }
-            } else if (c == 'H') {
-                if (sitem && !sitem->inactive) {
-                    sitem->inactive = 1;
-                    sitem->finished = 0;
-                    curl_multi_remove_handle(mhandle, sitem->handle);
-                    need_refresh = 1;
-                }
-            } else if (c == 'p') {
-                if (sitem && !sitem->inactive) {
-                    if (!sitem->paused)
-                        curl_multi_remove_handle(mhandle, sitem->handle);
-                    sitem->paused = !sitem->paused;
-                    if (!sitem->paused) {
-                        add_handle(sitem);
-                        downloading = 1;
-                        if (start_time == INT_MIN)
-                            start_time = sitem->start_time;
-                        wtimeout(downloads, 0);
-                        wtimeout(openwin, 0);
-                    }
-                    need_refresh = 1;
-                }
-            } else if (c == KEY_DOWN) {
-                if (!sitem) {
-                    sitem = items;
-                    if (sitem)
-                        sitem->selected = 1;
-                } else {
-                    if (sitem->next) {
-                        sitem->selected = 0;
-                        sitem = sitem->next;
-                        sitem->selected = 1;
-                    }
-                }
-                need_refresh = 1;
-            } else if (c == KEY_UP) {
-                if (!sitem) {
-                    sitem = items;
-                    if (sitem)
-                        sitem->selected = 1;
-                } else {
-                    if (sitem->prev) {
-                        sitem->selected = 0;
-                        sitem = sitem->prev;
-                        sitem->selected = 1;
-                    }
-                }
-                need_refresh = 1;
-            } else if (c == KEY_NPAGE) {
-                if (!sitem) {
-                    current_page++;
-                    current_page = MIN(current_page, nb_ditems / (LINES-1));
-                } else {
-                    if (sitem->next) {
-                        int i;
-
-                        sitem->selected = 0;
-                        sitem = sitem->next;
-                        for (i = 0; i < LINES-1; i++) {
-                            if (!sitem->next)
-                                break;
-                            sitem = sitem->next;
-                        }
-                        sitem->selected = 1;
-                    }
-                }
-                need_refresh = 1;
-            } else if (c == KEY_PPAGE) {
-                if (!sitem) {
-                    current_page--;
-                    current_page = MAX(0, current_page);
-                } else {
-                    if (sitem->prev) {
-                        int i;
-
-                        sitem->selected = 0;
-                        sitem = sitem->prev;
-                        for (i = 0; i < LINES-1; i++) {
-                            if (!sitem->prev)
-                                break;
-                            sitem = sitem->prev;
-                        }
-                        sitem->selected = 1;
-                    }
-                }
-                need_refresh = 1;
-            } else if (c == KEY_RIGHT) {
-                if (sitem) {
-                    sitem->max_speed += 1024;
-                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
-                    need_refresh = 1;
-                }
-            } else if (c == KEY_LEFT) {
-                if (sitem) {
-                    sitem->max_speed = MAX(0, sitem->max_speed - 1024);
-                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
-                    need_refresh = 1;
-                }
-            } else if (c == KEY_HOME) {
-                if (sitem && sitem != items) {
-                    sitem->selected = 0;
-                    sitem = items;
-                    sitem->selected = 1;
-                    need_refresh = 1;
-                }
-            } else if (c == KEY_END) {
-                if (sitem) {
-                    sitem->selected = 0;
-                    for (;sitem->next;) {
-                        sitem = sitem->next;
-                    }
-                    sitem->selected = 1;
-                    need_refresh = 1;
-                }
-            } else if (c == KEY_RESIZE) {
-                delwin(openwin);
-                delwin(infowin);
-                delwin(helpwin);
-                delwin(statuswin);
-                delwin(downloads);
-                clear();
-                refresh();
-                endwin();
-
-                init_windows(downloading);
-
-                help_active = 0;
-                active_input = 0;
-                need_refresh = 1;
-                current_page = 0;
-            } else if (c == KEY_MOUSE) {
-                MEVENT mouse_event;
-                int y;
-
-                if (getmouse(&mouse_event) == OK) {
-                    if (sitem)
-                        sitem->selected = 0;
-                    sitem = items;
-                    for (y = 0; sitem->next; y++) {
-                        if (y == mouse_event.y)
-                            break;
-                        sitem = sitem->next;
-                    }
-                    sitem->selected = 1;
-                    need_refresh = 1;
-                }
-            }
-        }
-
-        if (downloading) {
-            int ret, numdfs, still_running;
-
-            ret = curl_multi_perform(mhandle, &still_running);
-            while (ret == CURLM_CALL_MULTI_PERFORM) {
-                ret = curl_multi_perform(mhandle, &still_running);
-            }
-            if (still_running == 0) {
-                downloading = 0;
-                wtimeout(downloads, -1);
-                wtimeout(openwin, -1);
-                need_refresh = 1;
-            }
-
-            if (ret == CURLM_OK) {
-                struct CURLMsg *m;
-
-                curl_multi_wait(mhandle, NULL, 0, 100, &numdfs);
-
-                do {
-                    int msgq = 0;
-
-                    m = curl_multi_info_read(mhandle, &msgq);
-                    if (m && (m->msg == CURLMSG_DONE)) {
-                        DownloadItem *item = NULL;
-                        CURL *handle = m->easy_handle;
-
-                        curl_multi_remove_handle(mhandle, handle);
-                        curl_easy_getinfo(handle, CURLINFO_PRIVATE, &item);
-                        if (item) {
-                            item->finished = 1;
-                            item->end_time = time(NULL);
-                            item->progress = 100;
-                        }
-                    }
-                } while (m);
-
-                if (numdfs > 0) {
-                    need_refresh = 1;
-                } else {
-                    struct timespec req, rem;
-
-                    req.tv_sec = 0;
-                    req.tv_nsec = 10000000L;
-                    nanosleep(&req, &rem);
-                }
-            }
-        }
-
-        if (need_refresh) {
-            write_downloads();
-            write_statuswin(downloading);
-
-            if (info_active)
-                write_infowin(sitem);
-
-            if (help_active)
-                write_helpwin();
-
-            doupdate();
-            need_refresh = 0;
-        }
-    }
+    pthread_join(curses_thread, NULL);
+    pthread_join(curl_thread, NULL);
 
     finish(0);
 }

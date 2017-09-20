@@ -55,7 +55,7 @@ Building
 --------
 
 To build NCDM, you need C99 compiler, a POSIX system, recent libcurl
-library and ncursesw library.
+library, libevent2 library, pthreads and ncursesw library.
 To build simply type `make`.
 
 Bugs & Patches
