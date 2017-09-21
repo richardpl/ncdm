@@ -113,13 +113,48 @@ static char *clonestring(const char *string, size_t string_len)
     return clone;
 }
 
+static void write_log(int color, const char *fmt, ...)
+{
+    int y, y0, x;
+    va_list vl;
+
+    getyx(logwin, y0, x);
+    wattrset(logwin, color);
+
+    va_start(vl, fmt);
+    vwprintw(logwin, fmt, vl);
+    va_end(vl);
+
+    getyx(logwin, y, x);
+    nb_logs += y - y0;
+    (void)x;
+}
+
+static void check_erc(const char *where, CURLcode code)
+{
+    if (code == CURLE_OK)
+        return;
+
+    write_log(COLOR_PAIR(1), "%s returns %s\n", where, curl_easy_strerror(code));
+}
+
+static void check_mrc(const char *where, CURLMcode code)
+{
+    if (code == CURLM_OK)
+        return;
+    write_log(COLOR_PAIR(1), "%s returns %s\n", where, curl_multi_strerror(code));
+}
+
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
     nb_ditems--;
 
     if (ditem->handle) {
         if (!ditem->inactive && !ditem->finished) {
-            curl_multi_remove_handle(mhandle, ditem->handle);
+            CURLMcode rc;
+
+            rc = curl_multi_remove_handle(mhandle, ditem->handle);
+            check_mrc("delete:", rc);
         }
         curl_easy_cleanup(ditem->handle);
     }
@@ -180,23 +215,6 @@ static void write_status(int color, const char *fmt, ...)
     va_end(vl);
 
     wnoutrefresh(statuswin);
-}
-
-static void write_log(int color, const char *fmt, ...)
-{
-    int y, y0, x;
-    va_list vl;
-
-    getyx(logwin, y0, x);
-    wattrset(logwin, color);
-
-    va_start(vl, fmt);
-    vwprintw(logwin, fmt, vl);
-    va_end(vl);
-
-    getyx(logwin, y, x);
-    nb_logs += y - y0;
-    (void)x;
 }
 
 static void write_helpwin()
@@ -389,6 +407,7 @@ static int create_handle(int overwritefile, const char *newurl,
     const char *lpath;
     char *unescape;
     CURL *handle;
+    CURLcode rc;
     int urllen, escape_url_size, i;
 
     string_pos = 0;
@@ -450,6 +469,7 @@ static int create_handle(int overwritefile, const char *newurl,
 
     lpath = strrchr(unescape, '/');
     if (!lpath) {
+        curl_free(unescape);
         write_status(A_REVERSE | COLOR_PAIR(1), "Invalid URL");
         delete_ditem(item);
         return 1;
@@ -510,7 +530,8 @@ static int create_handle(int overwritefile, const char *newurl,
         return 1;
     }
 
-    curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
+    rc = curl_easy_setopt(handle, CURLOPT_URL, item->escape_url);
+    check_erc("url:", rc);
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(handle, CURLOPT_PRIVATE, item);
     curl_easy_setopt(handle, CURLOPT_XFERINFODATA, item);
@@ -519,19 +540,27 @@ static int create_handle(int overwritefile, const char *newurl,
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(handle, CURLOPT_MAX_RECV_SPEED_LARGE, item->max_speed);
-    if (referer)
-        curl_easy_setopt(handle, CURLOPT_REFERER, referer);
+    if (referer) {
+        rc = curl_easy_setopt(handle, CURLOPT_REFERER, referer);
+        check_erc("referer:", rc);
+    }
 
     if (!overwritefile) {
         curl_off_t from;
         fseek(outputfile, 0, SEEK_END);
         from = item->downloaded = ftell(outputfile);
-        curl_easy_setopt(handle, CURLOPT_RESUME_FROM_LARGE, from);
+        rc = curl_easy_setopt(handle, CURLOPT_RESUME_FROM_LARGE, from);
+        check_erc("resume:", rc);
     }
-    if (start_all && curl_multi_add_handle(mhandle, handle) != CURLM_OK) {
-        write_status(A_REVERSE | COLOR_PAIR(1), "Failed to add curl easy handle");
-        delete_ditem(item);
-        return 1;
+    if (start_all) {
+        CURLMcode rc;
+        rc = curl_multi_add_handle(mhandle, handle);
+        check_mrc("create:", rc);
+        if (rc != CURLM_OK) {
+            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to add curl easy handle");
+            delete_ditem(item);
+            return 1;
+        }
     }
     item->paused = 1;
     nb_ditems++;
@@ -612,6 +641,7 @@ static void write_statuswin(int downloading)
 
 static void add_handle(DownloadItem *ditem)
 {
+    CURLMcode rc;
     curl_off_t from;
     int still_running;
 
@@ -620,14 +650,17 @@ static void add_handle(DownloadItem *ditem)
     curl_easy_setopt(ditem->handle, CURLOPT_RESUME_FROM_LARGE, from);
     ditem->start_time = time(NULL);
     ditem->end_time = 0;
-    curl_multi_add_handle(mhandle, ditem->handle);
+    rc = curl_multi_add_handle(mhandle, ditem->handle);
+    check_mrc("add:", rc);
     curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
     active_downloads++;
 }
 
 static void remove_handle(DownloadItem *ditem)
 {
-    curl_multi_remove_handle(mhandle, ditem->handle);
+    CURLMcode rc;
+    rc = curl_multi_remove_handle(mhandle, ditem->handle);
+    check_mrc("remove:", rc);
     active_downloads--;
     ditem->end_time = time(NULL);
 }
@@ -699,32 +732,6 @@ static int parse_file(char *filename)
     }
 
     return 0;
-}
-
-typedef struct _ConnInfo
-{
-  CURL *easy;
-  char *url;
-  char error[CURL_ERROR_SIZE];
-} ConnInfo;
-
-static void check_rc(const char *where, CURLMcode code)
-{
-    if (code != CURLM_OK) {
-        const char *s;
-
-        switch (code) {
-        case CURLM_BAD_HANDLE:      s = "CURLM_BAD_HANDLE";      break;
-        case CURLM_BAD_EASY_HANDLE: s = "CURLM_BAD_EASY_HANDLE"; break;
-        case CURLM_OUT_OF_MEMORY:   s = "CURLM_OUT_OF_MEMORY";   break;
-        case CURLM_INTERNAL_ERROR:  s = "CURLM_INTERNAL_ERROR";  break;
-        case CURLM_UNKNOWN_OPTION:  s = "CURLM_UNKNOWN_OPTION";  break;
-        case CURLM_LAST:            s = "CURLM_LAST";            break;
-        case CURLM_BAD_SOCKET:      s = "CURLM_BAD_SOCKET";      break;
-        default:                    s = "CURLM_unknown";         break;
-        }
-        write_log(COLOR_PAIR(1), "%s returns %s\n", where, s);
-    }
 }
 
 static int parse_parameters(int argc, char *argv[],
@@ -813,7 +820,7 @@ static void timer_cb(int fd, short kind, void *userp)
     (void)userp;
 
     rc = curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
-    check_rc("timer_cb:", rc);
+    check_mrc("timer_cb:", rc);
     check_multi_info();
     downloading = still_running > 0;
 }
@@ -854,7 +861,7 @@ static void event_cb(int fd, short kind, void *userp)
     int action = (kind & EV_READ ? CURL_CSELECT_IN : 0) | (kind & EV_WRITE ? CURL_CSELECT_OUT : 0);
 
     rc = curl_multi_socket_action(mhandle, fd, action, &still_running);
-    check_rc("event_cb:", rc);
+    check_mrc("event_cb:", rc);
 
     check_multi_info();
     if (still_running <= 0) {
@@ -940,8 +947,7 @@ static void *do_ncurses(void *unused)
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
                 if (active_input == ENTERING_URL && create_handle(overwritefile, string, NULL, NULL, 0)) {
                     active_input = 0;
-                    werase(openwin);
-                    wnoutrefresh(openwin);
+                    write_downloads();
                     doupdate();
                     continue;
                 } else if (active_input == ENTERING_REFERER) {
@@ -989,10 +995,7 @@ static void *do_ncurses(void *unused)
             } else if (c == 'l') {
                 log_active = !log_active;
             } else if (c == 'A' || c == 'a') {
-                if (c == 'A')
-                    overwritefile = 1;
-                else
-                    overwritefile = 0;
+                overwritefile = c == 'A';
 
                 if (!active_input) {
                     active_input = ENTERING_URL;
@@ -1031,8 +1034,11 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == 'h') {
                 if (sitem && sitem->inactive) {
+                    CURLMcode rc;
+
                     sitem->inactive = 0;
-                    curl_multi_add_handle(mhandle, sitem->handle);
+                    rc = curl_multi_add_handle(mhandle, sitem->handle);
+                    check_mrc("active:", rc);
                 }
             } else if (c == 'D') {
                 if (sitem) {
