@@ -622,10 +622,12 @@ static void write_downloads()
         item = item->next;
     }
 
-    if (cline >= 0)
+    if (cline >= 0) {
         offset = MAX(cline - (LINES - 2), 0);
-    else
+        current_page = cline / (LINES - 1);
+    } else {
         offset = current_page * (LINES - 1);
+    }
 
     pnoutrefresh(downloads, offset, 0, 0, 0, LINES-1, COLS);
 }
@@ -1260,7 +1262,7 @@ static void *do_ncurses(void *unused)
                         sitem->selected = 0;
                     sitem = items;
                     for (y = 0; sitem->next; y++) {
-                        if (y == mouse_event.y)
+                        if (y == ((current_page * (LINES - 1)) + mouse_event.y))
                             break;
                         sitem = sitem->next;
                     }
