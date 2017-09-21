@@ -1229,11 +1229,9 @@ static void *do_ncurses(void *unused)
                     sitem->selected = 1;
                 }
             } else if (c == KEY_END) {
-                if (sitem) {
+                if (sitem && sitem != items_tail) {
                     sitem->selected = 0;
-                    for (;sitem->next;) {
-                        sitem = sitem->next;
-                    }
+                    sitem = items_tail;
                     sitem->selected = 1;
                 }
             } else if (c == KEY_RESIZE) {
