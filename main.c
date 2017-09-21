@@ -644,7 +644,24 @@ static void write_statuswin(int downloading)
         werase(statuswin);
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
     }
-    mvwprintw(statuswin, 0, COLS/2-1,  " [I:%d P:%d A:%d F:%d N:%d] ", inactive_downloads, paused_downloads, active_downloads, finished_downloads, nb_ditems);
+    mvwprintw(statuswin, 0, COLS/2-1,  " [");
+    wattrset(statuswin, A_BOLD | COLOR_PAIR(4));
+    waddstr(statuswin, "I");
+    wattrset(statuswin, COLOR_PAIR(7));
+    wprintw(statuswin, ":%d ", inactive_downloads);
+    wattrset(statuswin, COLOR_PAIR(2));
+    waddstr(statuswin, "P");
+    wattrset(statuswin, COLOR_PAIR(7));
+    wprintw(statuswin, ":%d ", paused_downloads);
+    wattrset(statuswin, A_BOLD | COLOR_PAIR(2));
+    waddstr(statuswin, "A");
+    wattrset(statuswin, COLOR_PAIR(7));
+    wprintw(statuswin, ":%d ", active_downloads);
+    wattrset(statuswin, A_REVERSE | A_BOLD | COLOR_PAIR(2));
+    waddstr(statuswin, "F");
+    wattrset(statuswin, COLOR_PAIR(7));
+    wprintw(statuswin, ":%d ", finished_downloads);
+    wprintw(statuswin, "N:%d] ", nb_ditems);
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
