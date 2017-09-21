@@ -85,6 +85,8 @@ int help_active = 0;
 int info_active = 0;
 int log_active  = 0;
 int downloading = 0;
+int active_downloads = 0;
+int finished_downloads = 0;
 
 pthread_t curses_thread;
 pthread_t curl_thread;
@@ -113,6 +115,8 @@ static char *clonestring(const char *string, size_t string_len)
 
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
+    nb_ditems--;
+
     if (ditem->handle) {
         if (!ditem->inactive && !ditem->finished) {
             curl_multi_remove_handle(mhandle, ditem->handle);
@@ -601,6 +605,7 @@ static void write_statuswin(int downloading)
         werase(statuswin);
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
     }
+    mvwprintw(statuswin, 0, COLS/2-1,  " (%d/%d/%d) ", finished_downloads, active_downloads, nb_ditems);
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
@@ -617,11 +622,13 @@ static void add_handle(DownloadItem *ditem)
     ditem->end_time = 0;
     curl_multi_add_handle(mhandle, ditem->handle);
     curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
+    active_downloads++;
 }
 
 static void remove_handle(DownloadItem *ditem)
 {
     curl_multi_remove_handle(mhandle, ditem->handle);
+    active_downloads--;
     ditem->end_time = time(NULL);
 }
 
@@ -703,7 +710,7 @@ typedef struct _ConnInfo
 
 static void check_rc(const char *where, CURLMcode code)
 {
-    if (CURLM_OK != code) {
+    if (code != CURLM_OK) {
         const char *s;
 
         switch (code) {
@@ -792,6 +799,7 @@ static void check_multi_info()
             remove_handle(ditem);
             ditem->finished = 1;
             ditem->progress = 100.;
+            finished_downloads++;
             write_log(COLOR_PAIR(7), "Finished downloading %s.\n", ditem->outputfilename);
         }
     }
@@ -1024,14 +1032,11 @@ static void *do_ncurses(void *unused)
             } else if (c == 'h') {
                 if (sitem && sitem->inactive) {
                     sitem->inactive = 0;
-                    fseek(sitem->outputfile, sitem->downloaded, SEEK_SET);
-                    curl_easy_setopt(sitem->handle, CURLOPT_RESUME_FROM_LARGE, ftell(sitem->outputfile));
                     curl_multi_add_handle(mhandle, sitem->handle);
                 }
             } else if (c == 'D') {
                 if (sitem) {
                     sitem = delete_ditem(sitem);
-                    nb_ditems--;
                     werase(downloads);
                 }
             } else if (c == 'R') {
@@ -1077,7 +1082,10 @@ static void *do_ncurses(void *unused)
             } else if (c == 'H') {
                 if (sitem && !sitem->inactive) {
                     sitem->inactive = 1;
-                    sitem->finished = 0;
+                    if (sitem->finished) {
+                        finished_downloads--;
+                        sitem->finished = 0;
+                    }
                     remove_handle(sitem);
                 }
             } else if (c == 'p') {
