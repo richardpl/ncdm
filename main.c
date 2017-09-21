@@ -145,7 +145,7 @@ static void check_mrc(const char *where, CURLMcode code)
     write_log(COLOR_PAIR(1), "%s returns %s\n", where, curl_multi_strerror(code));
 }
 
-static DownloadItem* delete_ditem(DownloadItem *ditem)
+static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
 {
     nb_ditems--;
 
@@ -176,7 +176,7 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         ditem = old->prev;
         ditem->next = old->next;
         old->next->prev = ditem;
-        ditem->next->selected = 1;
+        ditem->next->selected = select;
         ditem = ditem->next;
         free(old);
     } else if (ditem->next) {
@@ -193,7 +193,7 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         old = ditem;
         ditem = items_tail = ditem->prev;
         ditem->next = NULL;
-        ditem->selected = 1;
+        ditem->selected = select;
         free(old);
     } else {
         free(ditem);
@@ -363,7 +363,7 @@ static void uninit()
     endwin();
 
     for (;item;)
-        item = delete_ditem(item);
+        item = delete_ditem(item, 0);
 
     curl_multi_cleanup(mhandle);
     mhandle = NULL;
@@ -449,21 +449,21 @@ static int create_handle(int overwritefile, const char *newurl,
     item->url = clonestring(newurl, urllen);
     if (!item->url) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to copy URL");
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
     item->handle = handle = curl_easy_init();
     if (!handle) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to create curl easy handle");
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
     unescape = curl_easy_unescape(handle, newurl, urllen, NULL);
     if (!unescape) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to unescape URL");
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
@@ -471,7 +471,7 @@ static int create_handle(int overwritefile, const char *newurl,
     if (!lpath) {
         curl_free(unescape);
         write_status(A_REVERSE | COLOR_PAIR(1), "Invalid URL");
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
@@ -481,7 +481,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!escape) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
-            delete_ditem(item);
+            delete_ditem(item, 0);
             return 1;
         }
         escape_url_size = strlen(escape) + strlen(newurl);
@@ -489,7 +489,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!item->escape_url) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
-            delete_ditem(item);
+            delete_ditem(item, 0);
             return 1;
         }
 
@@ -504,7 +504,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!item->escape_url) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate url");
-            delete_ditem(item);
+            delete_ditem(item, 0);
             return 1;
         }
     }
@@ -516,7 +516,7 @@ static int create_handle(int overwritefile, const char *newurl,
 
     if (!item->outputfilename) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
@@ -526,7 +526,7 @@ static int create_handle(int overwritefile, const char *newurl,
         item->outputfile = outputfile = fopen(item->outputfilename, "wb");
     if (!outputfile) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", item->outputfilename);
-        delete_ditem(item);
+        delete_ditem(item, 0);
         return 1;
     }
 
@@ -558,7 +558,7 @@ static int create_handle(int overwritefile, const char *newurl,
         check_mrc("create:", rc);
         if (rc != CURLM_OK) {
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to add curl easy handle");
-            delete_ditem(item);
+            delete_ditem(item, 0);
             return 1;
         }
     }
@@ -1042,7 +1042,7 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == 'D') {
                 if (sitem) {
-                    sitem = delete_ditem(sitem);
+                    sitem = delete_ditem(sitem, 1);
                     werase(downloads);
                 }
             } else if (c == 'R') {
