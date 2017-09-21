@@ -970,7 +970,6 @@ static void *do_ncurses(void *unused)
             if (c == KEY_ENTER || c == '\n' || c == '\r') {
                 if (active_input == ENTERING_URL && create_handle(overwritefile, string, NULL, NULL, 0)) {
                     active_input = 0;
-                    write_downloads();
                     doupdate();
                     continue;
                 } else if (active_input == ENTERING_REFERER) {
@@ -1007,6 +1006,7 @@ static void *do_ncurses(void *unused)
                 }
             }
             mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
+            wclrtoeol(openwin);
             mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
         } else if (!active_input) {
             c = wgetch(downloads);
