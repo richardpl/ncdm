@@ -61,12 +61,13 @@ typedef struct SockInfo {
 #define PARAM_INPUTFILE  5
 #define PARAM_MAXSPEED   6
 #define PARAM_MAXHCONN   7
+#define PARAM_AUTOSTART  8
+#define PARAM_AUTOEXIT   9
 
 #define MAX_STRING_LEN 16384
 
 char *last_search = NULL;
 char *string = NULL;
-int start_all = 0;
 CURLM *mhandle = NULL;
 struct event_base *eventbase = NULL;
 struct event *timerevent = NULL;
@@ -87,6 +88,8 @@ int log_active  = 0;
 int downloading = 0;
 int active_downloads = 0;
 int finished_downloads = 0;
+int auto_start = 0;
+int auto_exit = 0;
 
 pthread_t curses_thread;
 pthread_t curl_thread;
@@ -552,16 +555,6 @@ static int create_handle(int overwritefile, const char *newurl,
         rc = curl_easy_setopt(handle, CURLOPT_RESUME_FROM_LARGE, from);
         check_erc("resume:", rc);
     }
-    if (start_all) {
-        CURLMcode rc;
-        rc = curl_multi_add_handle(mhandle, handle);
-        check_mrc("create:", rc);
-        if (rc != CURLM_OK) {
-            write_status(A_REVERSE | COLOR_PAIR(1), "Failed to add curl easy handle");
-            delete_ditem(item, 0);
-            return 1;
-        }
-    }
     item->paused = 1;
     nb_ditems++;
 
@@ -634,7 +627,7 @@ static void write_statuswin(int downloading)
         werase(statuswin);
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
     }
-    mvwprintw(statuswin, 0, COLS/2-1,  " (%d/%d/%d) ", finished_downloads, active_downloads, nb_ditems);
+    mvwprintw(statuswin, 0, COLS/2-1,  " (A:%d/F:%d/N:%d) ", active_downloads, finished_downloads, nb_ditems);
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
@@ -665,7 +658,18 @@ static void remove_handle(DownloadItem *ditem)
     ditem->end_time = time(NULL);
 }
 
-static void init_windows(int downloading)
+static void init_timeouts(int check)
+{
+    if (check) {
+        wtimeout(downloads, 100);
+        wtimeout(openwin, 100);
+    } else {
+        wtimeout(downloads, -1);
+        wtimeout(openwin, -1);
+    }
+}
+
+static void init_windows()
 {
     downloads = newpad(4096, COLS);
     if (!downloads) {
@@ -697,14 +701,6 @@ static void init_windows(int downloading)
         error(-1, "Failed to create open window.\n");
     }
 
-    if (downloading) {
-        wtimeout(downloads, 100);
-        wtimeout(openwin, 100);
-    } else {
-        wtimeout(downloads, -1);
-        wtimeout(openwin, -1);
-    }
-
     keypad(downloads,  TRUE);
     keypad(openwin,    TRUE);
 
@@ -714,6 +710,19 @@ static void init_windows(int downloading)
     leaveok(logwin,    TRUE);
     leaveok(openwin,   TRUE);
     leaveok(statuswin, TRUE);
+}
+
+static void auto_startall()
+{
+    DownloadItem *item;
+
+    if (!auto_start)
+        return;
+
+    for (item = items; item; item = item->next) {
+        item->paused = 0;
+        add_handle(item);
+    }
 }
 
 static int parse_file(char *filename)
@@ -761,6 +770,10 @@ static int parse_parameters(int argc, char *argv[],
             param = PARAM_MAXSPEED;
         } else if (!strcmp(argv[i], "-H")) {
             param = PARAM_MAXHCONN;
+        } else if (!strcmp(argv[i], "-X")) {
+            param = PARAM_AUTOEXIT;
+        } else if (!strcmp(argv[i], "-x")) {
+            param = PARAM_AUTOSTART;
         } else {
             if (param == PARAM_REFERER) {
                 referer = argv[i];
@@ -774,6 +787,10 @@ static int parse_parameters(int argc, char *argv[],
                 parse_file(argv[i]);
             } else if (param == PARAM_MAXSPEED) {
                 speed = atol(argv[i]);
+            } else if (param == PARAM_AUTOEXIT) {
+                auto_exit = !!atol(argv[i]);
+            } else if (param == PARAM_AUTOSTART) {
+                auto_start = !!atol(argv[i]);
             } else {
                 create_handle(overwritefile, argv[i], referer, output, speed);
                 referer = output = NULL;
@@ -810,6 +827,9 @@ static void check_multi_info()
             write_log(COLOR_PAIR(7), "Finished downloading %s.\n", ditem->outputfilename);
         }
     }
+
+    if (auto_exit && (finished_downloads > 0) && (finished_downloads == nb_ditems))
+        finish(0);
 }
 
 static void timer_cb(int fd, short kind, void *userp)
@@ -916,8 +936,8 @@ static void *do_curl(void *unused)
     (void)unused;
 
     for (;;) {
-        sleep(1);
         event_base_loop(eventbase, 0);
+        sleep(1);
     }
 
     return NULL;
@@ -1204,7 +1224,8 @@ static void *do_ncurses(void *unused)
                 refresh();
                 endwin();
 
-                init_windows(downloading);
+                init_windows();
+                init_timeouts(downloading);
 
                 help_active = 0;
                 active_input = 0;
@@ -1285,8 +1306,6 @@ int main(int argc, char *argv[])
     mousemask(ALL_MOUSE_EVENTS, NULL);
     mouseinterval(0);
 
-    init_windows(downloading);
-
     if (has_colors()) {
         start_color();
 
@@ -1299,14 +1318,20 @@ int main(int argc, char *argv[])
         init_pair(7, COLOR_WHITE,   COLOR_BLACK);
     }
 
+    init_windows();
+
     if (parse_parameters(argc, argv, &max_total_connections, &max_host_connections))
         write_downloads();
 
     curl_multi_setopt(mhandle, CURLMOPT_MAX_TOTAL_CONNECTIONS, max_total_connections);
     curl_multi_setopt(mhandle, CURLMOPT_MAX_HOST_CONNECTIONS, max_host_connections);
 
+    auto_startall();
+
     write_statuswin(downloading);
     doupdate();
+
+    init_timeouts(downloading);
 
     pthread_create(&curses_thread, NULL, do_ncurses, NULL);
     pthread_create(&curl_thread, NULL, do_curl, NULL);

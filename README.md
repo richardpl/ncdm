@@ -47,6 +47,10 @@ Optional switches:
 
 -s speed   - Limit max speed in bytes for downloading URL that follows it.
 
+-x bool    - Auto start downloading.
+
+-X bool    - Auto exit when all was downloaded.
+
 Example
 -------
 
