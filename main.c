@@ -86,6 +86,8 @@ int help_active = 0;
 int info_active = 0;
 int log_active  = 0;
 int downloading = 0;
+int inactive_downloads = 0;
+int paused_downloads = 0;
 int active_downloads = 0;
 int finished_downloads = 0;
 int auto_start = 0;
@@ -556,6 +558,7 @@ static int create_handle(int overwritefile, const char *newurl,
         check_erc("resume:", rc);
     }
     item->paused = 1;
+    paused_downloads++;
     nb_ditems++;
 
     return 0;
@@ -627,7 +630,7 @@ static void write_statuswin(int downloading)
         werase(statuswin);
         wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
     }
-    mvwprintw(statuswin, 0, COLS/2-1,  " (A:%d/F:%d/N:%d) ", active_downloads, finished_downloads, nb_ditems);
+    mvwprintw(statuswin, 0, COLS/2-1,  " [I:%d P:%d A:%d F:%d N:%d] ", inactive_downloads, paused_downloads, active_downloads, finished_downloads, nb_ditems);
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
@@ -654,7 +657,7 @@ static void remove_handle(DownloadItem *ditem)
     CURLMcode rc;
     rc = curl_multi_remove_handle(mhandle, ditem->handle);
     check_mrc("remove:", rc);
-    active_downloads--;
+    active_downloads = MAX(active_downloads - 1, 0);
     ditem->end_time = time(NULL);
 }
 
@@ -1035,6 +1038,7 @@ static void *do_ncurses(void *unused)
                     for (;item;) {
                         if (item->paused && !item->inactive && !item->finished) {
                             item->paused = 0;
+                            paused_downloads = MAX(paused_downloads - 1, 0);
                             add_handle(item);
                         }
                         item = item->next;
@@ -1044,6 +1048,7 @@ static void *do_ncurses(void *unused)
                     for (;item;) {
                         if (!item->paused && !item->inactive && !item->finished) {
                             item->paused = 1;
+                            paused_downloads++;
                             remove_handle(item);
                         }
                         item = item->next;
@@ -1054,11 +1059,10 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == 'h') {
                 if (sitem && sitem->inactive) {
-                    CURLMcode rc;
-
                     sitem->inactive = 0;
-                    rc = curl_multi_add_handle(mhandle, sitem->handle);
-                    check_mrc("active:", rc);
+                    inactive_downloads--;
+                    paused_downloads++;
+                    sitem->paused = 1;
                 }
             } else if (c == 'D') {
                 if (sitem) {
@@ -1108,22 +1112,26 @@ static void *do_ncurses(void *unused)
             } else if (c == 'H') {
                 if (sitem && !sitem->inactive) {
                     sitem->inactive = 1;
+                    inactive_downloads++;
                     if (sitem->finished) {
                         finished_downloads--;
                         sitem->finished = 0;
                     }
+                    paused_downloads = MAX(paused_downloads - 1, 0);
                     remove_handle(sitem);
                 }
             } else if (c == 'p') {
                 if (sitem && !sitem->inactive && !sitem->finished) {
                     if (!sitem->paused) {
                         remove_handle(sitem);
+                        paused_downloads++;
                     }
                     sitem->paused = !sitem->paused;
                     if (!sitem->paused) {
                         wtimeout(downloads, 100);
                         wtimeout(openwin, 100);
                         downloading = 1;
+                        paused_downloads = MAX(paused_downloads - 1, 0);
                         add_handle(sitem);
                         if (start_time == INT_MIN)
                             start_time = sitem->start_time;
