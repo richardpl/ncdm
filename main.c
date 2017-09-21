@@ -175,6 +175,18 @@ static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
     if (ditem->outputfilename)
         free(ditem->outputfilename);
 
+    if (ditem->inactive) {
+        inactive_downloads--;
+    }
+
+    if (ditem->paused) {
+        paused_downloads--;
+    }
+
+    if (ditem->finished) {
+        finished_downloads--;
+    }
+
     if (ditem->prev && ditem->next) {
         DownloadItem *old = ditem;
 
@@ -1117,7 +1129,10 @@ static void *do_ncurses(void *unused)
                         finished_downloads--;
                         sitem->finished = 0;
                     }
-                    paused_downloads = MAX(paused_downloads - 1, 0);
+                    if (sitem->paused) {
+                        paused_downloads--;
+                        sitem->paused = 0;
+                    }
                     remove_handle(sitem);
                 }
             } else if (c == 'p') {
