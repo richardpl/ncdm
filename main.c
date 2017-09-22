@@ -388,7 +388,7 @@ static int get_fg(DownloadItem *ditem)
 {
     int bold = 0;
 
-    if (ditem->mode != MODE_PAUSED)
+    if (ditem->mode == MODE_ACTIVE)
         bold = A_BOLD;
 
     if (ditem->mode == MODE_INACTIVE) {
@@ -402,7 +402,7 @@ static int get_bg(DownloadItem *ditem)
 {
     int bold = 0;
 
-    if (ditem->mode != MODE_PAUSED)
+    if (ditem->mode == MODE_ACTIVE)
         bold = A_BOLD;
 
     if (ditem->mode == MODE_INACTIVE) {
@@ -708,7 +708,7 @@ static void write_statuswin(int downloading)
     waddstr(statuswin, "A");
     wattrset(statuswin, COLOR_PAIR(7));
     wprintw(statuswin, ":%d ", active_downloads);
-    wattrset(statuswin, A_REVERSE | A_BOLD | COLOR_PAIR(2));
+    wattrset(statuswin, A_REVERSE | COLOR_PAIR(2));
     waddstr(statuswin, "F");
     wattrset(statuswin, COLOR_PAIR(7));
     wprintw(statuswin, ":%d ", finished_downloads);
