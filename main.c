@@ -1193,34 +1193,56 @@ static void *do_ncurses(void *unused)
                     }
                 }
             } else if (c == KEY_DOWN) {
-                if (!sitem[current_mode]) {
-                    sitem[current_mode] = items;
-                } else {
-                    if (sitem[current_mode]->next) {
-                        DownloadItem *item = sitem[current_mode]->next;
+                if (sitem[current_mode] && sitem[current_mode]->next) {
+                    DownloadItem *item = sitem[current_mode]->next;
 
+                    if (current_mode) {
                         for (;item; item = item->next) {
-                            if (item->mode == current_mode || !current_mode)
+                            if (item->mode == current_mode)
                                 break;
                         }
-                        if (item && (item->mode == current_mode || !current_mode))
-                            sitem[current_mode] = item;
                     }
+                    if (item && (item->mode == current_mode || !current_mode))
+                        sitem[current_mode] = item;
+                }
+
+                if (!sitem[current_mode]) {
+                    DownloadItem *item = items;
+
+                    if (current_mode) {
+                        for (;item; item = item->next) {
+                            if (item->mode == current_mode)
+                                break;
+                        }
+                    }
+
+                    sitem[current_mode] = item;
                 }
             } else if (c == KEY_UP) {
-                if (!sitem[current_mode]) {
-                    sitem[current_mode] = items;
-                } else {
-                    if (sitem[current_mode]->prev) {
-                        DownloadItem *item = sitem[current_mode]->prev;
+                if (sitem[current_mode] && sitem[current_mode]->prev) {
+                    DownloadItem *item = sitem[current_mode]->prev;
 
+                    if (current_mode) {
                         for (;item; item = item->prev) {
-                            if (item->mode == current_mode || !current_mode)
+                            if (item->mode == current_mode)
                                 break;
                         }
-                        if (item && (item->mode == current_mode || !current_mode))
-                            sitem[current_mode] = item;
                     }
+                    if (item && (item->mode == current_mode || !current_mode))
+                        sitem[current_mode] = item;
+                }
+
+                if (!sitem[current_mode]) {
+                    DownloadItem *item = items;
+
+                    if (current_mode) {
+                        for (;item; item = item->prev) {
+                            if (item->mode == current_mode)
+                                break;
+                        }
+                    }
+
+                    sitem[current_mode] = item;
                 }
             } else if (c == KEY_NPAGE) {
                 if (!sitem[current_mode]) {
