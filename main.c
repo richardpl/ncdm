@@ -282,13 +282,18 @@ static void write_helpwin()
     int i = 0;
 
     wattrset(helpwin, COLOR_PAIR(5));
+    mvwaddstr(helpwin, i++, 0, " 1 - show all downloads ");
+    mvwaddstr(helpwin, i++, 0, " 2 - show only inactive downloads ");
+    mvwaddstr(helpwin, i++, 0, " 3 - show only paused downloads ");
+    mvwaddstr(helpwin, i++, 0, " 4 - show only active downloads ");
+    mvwaddstr(helpwin, i++, 0, " 5 - show only finished downloads ");
     mvwaddstr(helpwin, i++, 0, " a - add new download URL, downloading from last position ");
     mvwaddstr(helpwin, i++, 0, " A - add new download URL, downloading from beginning ");
     mvwaddstr(helpwin, i++, 0, " S - start/stop all downloads ");
     mvwaddstr(helpwin, i++, 0, " H - halt selected download ");
     mvwaddstr(helpwin, i++, 0, " h - unhalt selected download ");
     mvwaddstr(helpwin, i++, 0, " p - pause/unpause selected download ");
-    mvwaddstr(helpwin, i++, 0, " D - delete selectedd download from the list ");
+    mvwaddstr(helpwin, i++, 0, " D - delete selected download from the list ");
     mvwaddstr(helpwin, i++, 0, " R - set referer for the selected download ");
     mvwaddstr(helpwin, i++, 0, " i - show extra info for selected download ");
     mvwaddstr(helpwin, i++, 0, " l - show log of all downloads ");
