@@ -1004,6 +1004,7 @@ static void *do_ncurses(void *unused)
         if (active_input) {
             int skip_y, skip_x;
 
+            wclrtoeol(openwin);
             if (active_input == ENTERING_URL)
                 mvwaddstr(openwin, 0, 0, "URL: ");
             else if (active_input == ENTERING_REFERER)
@@ -1051,7 +1052,6 @@ static void *do_ncurses(void *unused)
                 }
             }
             mvwaddstr(openwin, skip_y, skip_x, string + MAX((signed)strlen(string) + skip_x - COLS, 0));
-            wclrtoeol(openwin);
             mvwchgat(openwin, skip_y, MIN(skip_x + (signed)strlen(string), COLS-1), 1, A_BLINK | A_REVERSE, 2, NULL);
         } else if (!active_input) {
             c = wgetch(downloads);
