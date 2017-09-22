@@ -205,6 +205,25 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         ditem->next = old->next;
         old->next->prev = ditem;
         ditem = ditem->next;
+
+        if (current_mode) {
+            DownloadItem *temp = ditem;
+
+            for (; ditem; ditem = ditem->next) {
+                if (ditem->mode == current_mode)
+                    break;
+            }
+
+            if (!ditem) {
+                ditem = temp;
+
+                for (; ditem; ditem = ditem->prev) {
+                    if (ditem->mode == current_mode)
+                        break;
+                }
+            }
+        }
+
         free(old);
     } else if (ditem->next) {
         DownloadItem *old;
@@ -212,6 +231,14 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         old = ditem;
         items = ditem = ditem->next;
         ditem->prev = NULL;
+
+        if (current_mode) {
+            for (; ditem; ditem = ditem->next) {
+                if (ditem->mode == current_mode)
+                    break;
+            }
+        }
+
         free(old);
     } else if (ditem->prev) {
         DownloadItem *old;
@@ -219,6 +246,14 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
         old = ditem;
         ditem = items_tail = ditem->prev;
         ditem->next = NULL;
+
+        if (current_mode) {
+            for (; ditem; ditem = ditem->prev) {
+                if (ditem->mode == current_mode)
+                    break;
+            }
+        }
+
         free(old);
     } else {
         free(ditem);
