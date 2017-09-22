@@ -12,10 +12,7 @@
 #include <unistd.h>
 
 typedef struct DownloadItem {
-    int paused;
-    int inactive;
-    int finished;
-    int ufinished;
+    int mode;
     char *url;
     char *escape_url;
     char *effective_url;
@@ -49,6 +46,15 @@ typedef struct SockInfo {
     int evset;
 } SockInfo;
 
+#define MODE_ALL         0
+#define MODE_INACTIVE    1
+#define MODE_PAUSED      2
+#define MODE_ACTIVE      3
+#define MODE_FINISHED    4
+#define NB_MODES         5
+
+int current_mode = MODE_ALL;
+
 #define ENTERING_URL     1
 #define ENTERING_REFERER 2
 #define ENTERING_SEARCH  3
@@ -73,7 +79,7 @@ struct event *timerevent = NULL;
 
 DownloadItem *items = NULL;
 DownloadItem *items_tail = NULL;
-DownloadItem *sitem = NULL;
+DownloadItem *sitem[NB_MODES] = { NULL };
 
 long int start_time = INT_MIN;
 int nb_ditems = 0;
@@ -151,10 +157,16 @@ static void check_mrc(const char *where, CURLMcode code)
 
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
-    nb_ditems--;
+    int i;
+
+    for (i = 0; i < NB_MODES; i++) {
+        if (ditem == sitem[i]) {
+            sitem[i] = NULL;
+        }
+    }
 
     if (ditem->handle) {
-        if (!ditem->inactive && !ditem->finished) {
+        if (ditem->mode == MODE_ACTIVE) {
             CURLMcode rc;
 
             rc = curl_multi_remove_handle(mhandle, ditem->handle);
@@ -171,18 +183,18 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
 
     if (ditem->outputfile)
         fclose(ditem->outputfile);
+
     if (ditem->outputfilename)
         free(ditem->outputfilename);
 
-    if (ditem->inactive) {
+    nb_ditems--;
+    if (ditem->mode == MODE_INACTIVE) {
         inactive_downloads--;
-    }
-
-    if (ditem->paused) {
+    } else if (ditem->mode == MODE_PAUSED) {
         paused_downloads--;
-    }
-
-    if (ditem->finished) {
+    } else if (ditem->mode == MODE_ACTIVE) {
+        active_downloads--;
+    } else if (ditem->mode == MODE_FINISHED) {
         finished_downloads--;
     }
 
@@ -278,8 +290,8 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " Max download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
     mvwprintw(infowin, i++, 0, " Content-type: %s ", sitem->contenttype);
-    mvwprintw(infowin, i++, 0, " Content-length: %f ", sitem->contentlength);
-    mvwprintw(infowin, i++, 0, " Download size:  %f ", sitem->download_size);
+    mvwprintw(infowin, i++, 0, " Content-length: %.0f ", sitem->contentlength);
+    mvwprintw(infowin, i++, 0, " Download size:  %.0f ", sitem->download_size);
     mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
     mvwprintw(infowin, i++, 0, " Primary port: %ld ", sitem->primary_port);
@@ -336,13 +348,13 @@ static int get_fg(DownloadItem *ditem)
 {
     int bold = 0;
 
-    if (!ditem->paused)
+    if (ditem->mode != MODE_PAUSED)
         bold = A_BOLD;
 
-    if (ditem->inactive) {
-        return ditem == sitem ? bold | A_REVERSE | COLOR_PAIR(5) : bold | A_REVERSE | COLOR_PAIR(4);
+    if (ditem->mode == MODE_INACTIVE) {
+        return ditem == sitem[current_mode] ? bold | A_REVERSE | COLOR_PAIR(5) : bold | A_REVERSE | COLOR_PAIR(4);
     } else {
-        return ditem == sitem ? bold | A_REVERSE | COLOR_PAIR(3) : bold | A_REVERSE | COLOR_PAIR(2);
+        return ditem == sitem[current_mode] ? bold | A_REVERSE | COLOR_PAIR(3) : bold | A_REVERSE | COLOR_PAIR(2);
     }
 }
 
@@ -350,13 +362,13 @@ static int get_bg(DownloadItem *ditem)
 {
     int bold = 0;
 
-    if (!ditem->paused)
+    if (ditem->mode != MODE_PAUSED)
         bold = A_BOLD;
 
-    if (ditem->inactive) {
-        return ditem == sitem ? bold | COLOR_PAIR(5) : bold | COLOR_PAIR(4);
+    if (ditem->mode == MODE_INACTIVE) {
+        return ditem == sitem[current_mode] ? bold | COLOR_PAIR(5) : bold | COLOR_PAIR(4);
     } else {
-        return ditem == sitem ? bold | COLOR_PAIR(3) : bold | COLOR_PAIR(2);
+        return ditem == sitem[current_mode] ? bold | COLOR_PAIR(3) : bold | COLOR_PAIR(2);
     }
 }
 
@@ -565,7 +577,7 @@ static int create_handle(int overwritefile, const char *newurl,
         rc = curl_easy_setopt(handle, CURLOPT_RESUME_FROM_LARGE, from);
         check_erc("resume:", rc);
     }
-    item->paused = 1;
+    item->mode = MODE_PAUSED;
     paused_downloads++;
     nb_ditems++;
 
@@ -577,8 +589,10 @@ static void write_downloads()
     DownloadItem *item = items;
     int line, cline = -1, offset;
 
+    wmove(downloads, 0, 0);
+
     item = items;
-    for (line = 0; item; line++) {
+    for (line = 0; item; item = item->next) {
         double progress = item->progress;
         char speedstr[128] = { 0 };
         char progstr[8] = { 0 };
@@ -591,7 +605,11 @@ static void write_downloads()
         int speedstrlen;
         int progstrlen;
 
-        if (item == sitem) {
+        if (current_mode && item->mode != current_mode) {
+            continue;
+        }
+
+        if (item == sitem[current_mode]) {
             cline = line;
         }
 
@@ -615,7 +633,7 @@ static void write_downloads()
                 mvwaddch(downloads, line, j, ' ');
         }
 
-        item = item->next;
+        line++;
     }
 
     if (cline >= 0) {
@@ -624,6 +642,7 @@ static void write_downloads()
     } else {
         offset = current_page * (LINES - 1);
     }
+    wclrtobot(downloads);
 
     pnoutrefresh(downloads, offset, 0, 0, 0, LINES-1, COLS);
 }
@@ -676,7 +695,6 @@ static void add_handle(DownloadItem *ditem)
     rc = curl_multi_add_handle(mhandle, ditem->handle);
     check_mrc("add:", rc);
     curl_multi_socket_action(mhandle, CURL_SOCKET_TIMEOUT, 0, &still_running);
-    active_downloads++;
 }
 
 static void remove_handle(DownloadItem *ditem)
@@ -684,7 +702,6 @@ static void remove_handle(DownloadItem *ditem)
     CURLMcode rc;
     rc = curl_multi_remove_handle(mhandle, ditem->handle);
     check_mrc("remove:", rc);
-    active_downloads = MAX(active_downloads - 1, 0);
     ditem->end_time = time(NULL);
 }
 
@@ -750,8 +767,9 @@ static void auto_startall()
         return;
 
     for (item = items; item; item = item->next) {
-        item->paused = 0;
+        item->mode = MODE_ACTIVE;
         add_handle(item);
+        active_downloads++;
     }
 }
 
@@ -851,9 +869,10 @@ static void check_multi_info()
             curl_easy_getinfo(easy, CURLINFO_PRIVATE, &ditem);
             curl_easy_getinfo(easy, CURLINFO_EFFECTIVE_URL, &eff_url);
             remove_handle(ditem);
-            ditem->finished = 1;
+            ditem->mode = MODE_FINISHED;
             ditem->progress = 100.;
             finished_downloads++;
+            active_downloads--;
             write_log(COLOR_PAIR(7), "Finished downloading %s.\n", ditem->outputfilename);
         }
     }
@@ -1000,13 +1019,14 @@ static void *do_ncurses(void *unused)
                     doupdate();
                     continue;
                 } else if (active_input == ENTERING_REFERER) {
-                    curl_easy_setopt(sitem->handle, CURLOPT_REFERER, string);
+                    if (sitem[current_mode])
+                        curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_REFERER, string);
                 } else if (active_input == ENTERING_SEARCH) {
                     DownloadItem *nsitem = items;
 
                     for (;nsitem; nsitem = nsitem->next) {
                         if (strstr(nsitem->outputfilename, string)) {
-                            sitem = nsitem;
+                            sitem[current_mode] = nsitem;
                             break;
                         }
                     }
@@ -1035,7 +1055,17 @@ static void *do_ncurses(void *unused)
         } else if (!active_input) {
             c = wgetch(downloads);
 
-            if (c == KEY_F(1) || c == '?') {
+            if (c == '1') {
+                current_mode = MODE_ALL;
+            } else if (c == '2') {
+                current_mode = MODE_INACTIVE;
+            } else if (c == '3') {
+                current_mode = MODE_PAUSED;
+            } else if (c == '4') {
+                current_mode = MODE_ACTIVE;
+            } else if (c == '5') {
+                current_mode = MODE_FINISHED;
+            } else if (c == KEY_F(1) || c == '?') {
                 help_active = !help_active;
             } else if (c == 'i') {
                 info_active = !info_active;
@@ -1060,19 +1090,21 @@ static void *do_ncurses(void *unused)
                     start_time = time(NULL);
 
                     for (;item;) {
-                        if (item->paused && !item->inactive && !item->finished) {
-                            item->paused = 0;
-                            paused_downloads = MAX(paused_downloads - 1, 0);
+                        if (item->mode == MODE_PAUSED) {
+                            item->mode = MODE_ACTIVE;
                             add_handle(item);
+                            active_downloads++;
+                            paused_downloads--;
                         }
                         item = item->next;
                     }
                 } else if (items) {
                     DownloadItem *item = items;
                     for (;item;) {
-                        if (!item->paused && !item->inactive && !item->finished) {
-                            item->paused = 1;
+                        if (item->mode == MODE_ACTIVE) {
+                            item->mode = MODE_PAUSED;
                             paused_downloads++;
+                            active_downloads--;
                             remove_handle(item);
                         }
                         item = item->next;
@@ -1082,19 +1114,17 @@ static void *do_ncurses(void *unused)
                     wtimeout(openwin, -1);
                 }
             } else if (c == 'h') {
-                if (sitem && sitem->inactive) {
-                    sitem->inactive = 0;
+                if (sitem[current_mode] && sitem[current_mode]->mode == MODE_INACTIVE) {
+                    sitem[current_mode]->mode = MODE_PAUSED;
                     inactive_downloads--;
                     paused_downloads++;
-                    sitem->paused = 1;
                 }
             } else if (c == 'D') {
-                if (sitem) {
-                    sitem = delete_ditem(sitem);
-                    werase(downloads);
+                if (sitem[current_mode] && (!current_mode || (sitem[current_mode]->mode == current_mode))) {
+                    sitem[current_mode] = delete_ditem(sitem[current_mode]);
                 }
             } else if (c == 'R') {
-                if (sitem) {
+                if (sitem[current_mode]) {
                     if (!active_input) {
                         active_input = ENTERING_REFERER;
                         continue;
@@ -1107,122 +1137,147 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == 'n') {
                 if (last_search) {
-                    DownloadItem *nsitem = sitem ? sitem->next : items;
+                    DownloadItem *nsitem = sitem[current_mode] ? sitem[current_mode]->next : items;
 
                     for (;nsitem; nsitem = nsitem->next) {
                         if (strstr(nsitem->outputfilename, last_search)) {
-                            sitem = nsitem;
+                            sitem[current_mode] = nsitem;
                             break;
                         }
                     }
                 }
             } else if (c == 'N') {
                 if (last_search) {
-                    DownloadItem *nsitem = sitem ? sitem->prev : items_tail;
+                    DownloadItem *nsitem = sitem[current_mode] ? sitem[current_mode]->prev : items_tail;
 
                     for (;nsitem; nsitem = nsitem->prev) {
                         if (strstr(nsitem->outputfilename, last_search)) {
-                            sitem = nsitem;
+                            sitem[current_mode] = nsitem;
                             break;
                         }
                     }
                 }
             } else if (c == 'H') {
-                if (sitem && !sitem->inactive) {
-                    sitem->inactive = 1;
-                    inactive_downloads++;
-                    if (sitem->finished) {
+                if (sitem[current_mode] && sitem[current_mode]->mode != MODE_INACTIVE) {
+                    if (sitem[current_mode]->mode == MODE_ACTIVE) {
+                        active_downloads--;
+                    } else if (sitem[current_mode]->mode == MODE_FINISHED) {
                         finished_downloads--;
-                        sitem->finished = 0;
-                    }
-                    if (sitem->paused) {
+                    } else if (sitem[current_mode]->mode == MODE_PAUSED) {
                         paused_downloads--;
-                        sitem->paused = 0;
                     }
-                    remove_handle(sitem);
+                    sitem[current_mode]->mode = MODE_INACTIVE;
+                    inactive_downloads++;
+                    remove_handle(sitem[current_mode]);
                 }
             } else if (c == 'p') {
-                if (sitem && !sitem->inactive && !sitem->finished) {
-                    if (!sitem->paused) {
-                        remove_handle(sitem);
+                if (sitem[current_mode] && (sitem[current_mode]->mode == MODE_ACTIVE || sitem[current_mode]->mode == MODE_PAUSED)) {
+                    if (sitem[current_mode]->mode == MODE_ACTIVE) {
+                        remove_handle(sitem[current_mode]);
                         paused_downloads++;
-                    }
-                    sitem->paused = !sitem->paused;
-                    if (!sitem->paused) {
+                        active_downloads--;
+                        sitem[current_mode]->mode = MODE_PAUSED;
+                    } else {
+                        sitem[current_mode]->mode = MODE_ACTIVE;
                         wtimeout(downloads, 100);
                         wtimeout(openwin, 100);
                         downloading = 1;
-                        paused_downloads = MAX(paused_downloads - 1, 0);
-                        add_handle(sitem);
+                        paused_downloads--;
+                        active_downloads++;
+                        add_handle(sitem[current_mode]);
                         if (start_time == INT_MIN)
-                            start_time = sitem->start_time;
+                            start_time = sitem[current_mode]->start_time;
                     }
                 }
             } else if (c == KEY_DOWN) {
-                if (!sitem) {
-                    sitem = items;
+                if (!sitem[current_mode]) {
+                    sitem[current_mode] = items;
                 } else {
-                    if (sitem->next) {
-                        sitem = sitem->next;
+                    if (sitem[current_mode]->next) {
+                        DownloadItem *item = sitem[current_mode]->next;
+
+                        for (;item; item = item->next) {
+                            if (item->mode == current_mode || !current_mode)
+                                break;
+                        }
+                        if (item && (item->mode == current_mode || !current_mode))
+                            sitem[current_mode] = item;
                     }
                 }
             } else if (c == KEY_UP) {
-                if (!sitem) {
-                    sitem = items;
+                if (!sitem[current_mode]) {
+                    sitem[current_mode] = items;
                 } else {
-                    if (sitem->prev) {
-                        sitem = sitem->prev;
+                    if (sitem[current_mode]->prev) {
+                        DownloadItem *item = sitem[current_mode]->prev;
+
+                        for (;item; item = item->prev) {
+                            if (item->mode == current_mode || !current_mode)
+                                break;
+                        }
+                        if (item && (item->mode == current_mode || !current_mode))
+                            sitem[current_mode] = item;
                     }
                 }
             } else if (c == KEY_NPAGE) {
-                if (!sitem) {
+                if (!sitem[current_mode]) {
                     current_page++;
                     current_page = MIN(current_page, nb_ditems / (LINES-1));
                 } else {
-                    if (sitem->next) {
+                    if (sitem[current_mode]->next) {
                         int i;
 
-                        sitem = sitem->next;
+                        sitem[current_mode] = sitem[current_mode]->next;
                         for (i = 0; i < LINES-1; i++) {
-                            if (!sitem->next)
+                            if (!sitem[current_mode]->next)
                                 break;
-                            sitem = sitem->next;
+                            sitem[current_mode] = sitem[current_mode]->next;
                         }
                     }
                 }
             } else if (c == KEY_PPAGE) {
-                if (!sitem) {
+                if (!sitem[current_mode]) {
                     current_page--;
                     current_page = MAX(0, current_page);
                 } else {
-                    if (sitem->prev) {
+                    if (sitem[current_mode]->prev) {
                         int i;
 
-                        sitem = sitem->prev;
+                        sitem[current_mode] = sitem[current_mode]->prev;
                         for (i = 0; i < LINES-1; i++) {
-                            if (!sitem->prev)
+                            if (!sitem[current_mode]->prev)
                                 break;
-                            sitem = sitem->prev;
+                            sitem[current_mode] = sitem[current_mode]->prev;
                         }
                     }
                 }
             } else if (c == KEY_RIGHT) {
-                if (sitem) {
-                    sitem->max_speed += 1024;
-                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                if (sitem[current_mode]) {
+                    sitem[current_mode]->max_speed += 1024;
+                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem[current_mode]->max_speed);
                 }
             } else if (c == KEY_LEFT) {
-                if (sitem) {
-                    sitem->max_speed = MAX(0, sitem->max_speed - 1024);
-                    curl_easy_setopt(sitem->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem->max_speed);
+                if (sitem[current_mode]) {
+                    sitem[current_mode]->max_speed = MAX(0, sitem[current_mode]->max_speed - 1024);
+                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem[current_mode]->max_speed);
                 }
             } else if (c == KEY_HOME) {
-                if (sitem && sitem != items) {
-                    sitem = items;
+                if (sitem[current_mode]) {
+                    DownloadItem *item = items;
+                    for (;item; item = item->next) {
+                        if (item->mode == current_mode || !current_mode)
+                            break;
+                    }
+                    sitem[current_mode] = item;
                 }
             } else if (c == KEY_END) {
-                if (sitem && sitem != items_tail) {
-                    sitem = items_tail;
+                if (sitem[current_mode]) {
+                    DownloadItem *item = items_tail;
+                    for (;item; item = item->prev) {
+                        if (item->mode == current_mode || !current_mode)
+                            break;
+                    }
+                    sitem[current_mode] = item;
                 }
             } else if (c == KEY_RESIZE) {
                 delwin(logwin);
@@ -1246,11 +1301,11 @@ static void *do_ncurses(void *unused)
                 int y;
 
                 if (getmouse(&mouse_event) == OK) {
-                    sitem = items;
-                    for (y = 0; sitem->next; y++) {
+                    sitem[current_mode] = items;
+                    for (y = 0; sitem[current_mode]->next; y++) {
                         if (y == ((current_page * (LINES - 1)) + mouse_event.y))
                             break;
-                        sitem = sitem->next;
+                        sitem[current_mode] = sitem[current_mode]->next;
                     }
                 }
             }
@@ -1260,7 +1315,7 @@ static void *do_ncurses(void *unused)
         write_statuswin(downloading);
 
         if (info_active)
-            write_infowin(sitem);
+            write_infowin(sitem[current_mode]);
 
         if (log_active)
             write_logwin();
