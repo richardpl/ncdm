@@ -676,6 +676,7 @@ static void write_statuswin(int downloading)
     if (start_time != INT_MIN && downloading)
         wprintw(statuswin, " T:%ld", time(NULL) - start_time);
     wprintw(statuswin, "] ");
+    wclrtoeol(statuswin);
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
@@ -932,6 +933,7 @@ static void event_cb(int fd, short kind, void *userp)
     check_mrc("event_cb:", rc);
 
     check_multi_info();
+    downloading = still_running > 0;
     if (still_running <= 0) {
         if (evtimer_pending(timerevent, NULL)) {
             evtimer_del(timerevent);
