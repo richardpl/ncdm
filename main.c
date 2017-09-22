@@ -740,7 +740,7 @@ static void remove_handle(DownloadItem *ditem)
     ditem->end_time = time(NULL);
 }
 
-static void init_timeouts(int check)
+static void set_timeouts(int check)
 {
     if (check) {
         wtimeout(downloads, 100);
@@ -1352,7 +1352,7 @@ static void *do_ncurses(void *unused)
                 endwin();
 
                 init_windows();
-                init_timeouts(downloading);
+                set_timeouts(downloading);
 
                 help_active = 0;
                 active_input = 0;
@@ -1374,6 +1374,8 @@ static void *do_ncurses(void *unused)
 
         write_downloads();
         write_statuswin(downloading);
+
+        set_timeouts(downloading);
 
         if (info_active)
             write_infowin(sitem[current_mode]);
@@ -1455,7 +1457,7 @@ int main(int argc, char *argv[])
     write_statuswin(downloading);
     doupdate();
 
-    init_timeouts(downloading);
+    set_timeouts(downloading);
 
     pthread_create(&curses_thread, NULL, do_ncurses, NULL);
     pthread_create(&curl_thread, NULL, do_curl, NULL);
