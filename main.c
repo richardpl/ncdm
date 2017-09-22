@@ -1025,7 +1025,8 @@ static void *do_ncurses(void *unused)
                     DownloadItem *nsitem = items;
 
                     for (;nsitem; nsitem = nsitem->next) {
-                        if (strstr(nsitem->outputfilename, string)) {
+                        if ((nsitem->mode == current_mode || !current_mode) &&
+                            strstr(nsitem->outputfilename, string)) {
                             sitem[current_mode] = nsitem;
                             break;
                         }
@@ -1140,7 +1141,8 @@ static void *do_ncurses(void *unused)
                     DownloadItem *nsitem = sitem[current_mode] ? sitem[current_mode]->next : items;
 
                     for (;nsitem; nsitem = nsitem->next) {
-                        if (strstr(nsitem->outputfilename, last_search)) {
+                        if ((nsitem->mode == current_mode || !current_mode) &&
+                            strstr(nsitem->outputfilename, last_search)) {
                             sitem[current_mode] = nsitem;
                             break;
                         }
@@ -1151,7 +1153,8 @@ static void *do_ncurses(void *unused)
                     DownloadItem *nsitem = sitem[current_mode] ? sitem[current_mode]->prev : items_tail;
 
                     for (;nsitem; nsitem = nsitem->prev) {
-                        if (strstr(nsitem->outputfilename, last_search)) {
+                        if ((nsitem->mode == current_mode || !current_mode) &&
+                            strstr(nsitem->outputfilename, last_search)) {
                             sitem[current_mode] = nsitem;
                             break;
                         }
