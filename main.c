@@ -655,11 +655,7 @@ static void write_logwin()
 static void write_statuswin(int downloading)
 {
     wattrset(statuswin, COLOR_PAIR(7));
-    if (start_time != INT_MIN && downloading) {
-        werase(statuswin);
-        wprintw(statuswin, "seconds elapsed %ld", time(NULL) - start_time);
-    }
-    mvwprintw(statuswin, 0, COLS/2-1,  " [");
+    mvwprintw(statuswin, 0, 0,  "[");
     wattrset(statuswin, A_BOLD | COLOR_PAIR(4));
     waddstr(statuswin, "I");
     wattrset(statuswin, COLOR_PAIR(7));
@@ -676,7 +672,10 @@ static void write_statuswin(int downloading)
     waddstr(statuswin, "F");
     wattrset(statuswin, COLOR_PAIR(7));
     wprintw(statuswin, ":%d ", finished_downloads);
-    wprintw(statuswin, "N:%d] ", nb_ditems);
+    wprintw(statuswin, "N:%d", nb_ditems);
+    if (start_time != INT_MIN && downloading)
+        wprintw(statuswin, " T:%ld", time(NULL) - start_time);
+    wprintw(statuswin, "] ");
     mvwprintw(statuswin, 0, COLS-12, " Help (F1) ");
     wnoutrefresh(statuswin);
 }
