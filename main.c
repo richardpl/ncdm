@@ -14,7 +14,6 @@
 typedef struct DownloadItem {
     int paused;
     int inactive;
-    int selected;
     int finished;
     int ufinished;
     char *url;
@@ -150,7 +149,7 @@ static void check_mrc(const char *where, CURLMcode code)
     write_log(COLOR_PAIR(1), "%s returns %s\n", where, curl_multi_strerror(code));
 }
 
-static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
+static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
     nb_ditems--;
 
@@ -193,7 +192,6 @@ static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
         ditem = old->prev;
         ditem->next = old->next;
         old->next->prev = ditem;
-        ditem->next->selected = select;
         ditem = ditem->next;
         free(old);
     } else if (ditem->next) {
@@ -202,7 +200,6 @@ static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
         old = ditem;
         items = ditem = ditem->next;
         ditem->prev = NULL;
-        ditem->selected = 1;
         free(old);
     } else if (ditem->prev) {
         DownloadItem *old;
@@ -210,7 +207,6 @@ static DownloadItem* delete_ditem(DownloadItem *ditem, int select)
         old = ditem;
         ditem = items_tail = ditem->prev;
         ditem->next = NULL;
-        ditem->selected = select;
         free(old);
     } else {
         free(ditem);
@@ -344,9 +340,9 @@ static int get_fg(DownloadItem *ditem)
         bold = A_BOLD;
 
     if (ditem->inactive) {
-        return ditem->selected ? bold | A_REVERSE | COLOR_PAIR(5) : bold | A_REVERSE | COLOR_PAIR(4);
+        return ditem == sitem ? bold | A_REVERSE | COLOR_PAIR(5) : bold | A_REVERSE | COLOR_PAIR(4);
     } else {
-        return ditem->selected ? bold | A_REVERSE | COLOR_PAIR(3) : bold | A_REVERSE | COLOR_PAIR(2);
+        return ditem == sitem ? bold | A_REVERSE | COLOR_PAIR(3) : bold | A_REVERSE | COLOR_PAIR(2);
     }
 }
 
@@ -358,9 +354,9 @@ static int get_bg(DownloadItem *ditem)
         bold = A_BOLD;
 
     if (ditem->inactive) {
-        return ditem->selected ? bold | COLOR_PAIR(5) : bold | COLOR_PAIR(4);
+        return ditem == sitem ? bold | COLOR_PAIR(5) : bold | COLOR_PAIR(4);
     } else {
-        return ditem->selected ? bold | COLOR_PAIR(3) : bold | COLOR_PAIR(2);
+        return ditem == sitem ? bold | COLOR_PAIR(3) : bold | COLOR_PAIR(2);
     }
 }
 
@@ -380,7 +376,7 @@ static void uninit()
     endwin();
 
     for (;item;)
-        item = delete_ditem(item, 0);
+        item = delete_ditem(item);
 
     curl_multi_cleanup(mhandle);
     mhandle = NULL;
@@ -466,21 +462,21 @@ static int create_handle(int overwritefile, const char *newurl,
     item->url = clonestring(newurl, urllen);
     if (!item->url) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to copy URL");
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
     item->handle = handle = curl_easy_init();
     if (!handle) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to create curl easy handle");
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
     unescape = curl_easy_unescape(handle, newurl, urllen, NULL);
     if (!unescape) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to unescape URL");
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
@@ -488,7 +484,7 @@ static int create_handle(int overwritefile, const char *newurl,
     if (!lpath) {
         curl_free(unescape);
         write_status(A_REVERSE | COLOR_PAIR(1), "Invalid URL");
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
@@ -498,7 +494,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!escape) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to escape URL");
-            delete_ditem(item, 0);
+            delete_ditem(item);
             return 1;
         }
         escape_url_size = strlen(escape) + strlen(newurl);
@@ -506,7 +502,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!item->escape_url) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to allocate escape URL");
-            delete_ditem(item, 0);
+            delete_ditem(item);
             return 1;
         }
 
@@ -521,7 +517,7 @@ static int create_handle(int overwritefile, const char *newurl,
         if (!item->escape_url) {
             curl_free(unescape);
             write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate url");
-            delete_ditem(item, 0);
+            delete_ditem(item);
             return 1;
         }
     }
@@ -533,7 +529,7 @@ static int create_handle(int overwritefile, const char *newurl,
 
     if (!item->outputfilename) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to duplicate output filename");
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
@@ -543,7 +539,7 @@ static int create_handle(int overwritefile, const char *newurl,
         item->outputfile = outputfile = fopen(item->outputfilename, "wb");
     if (!outputfile) {
         write_status(A_REVERSE | COLOR_PAIR(1), "Failed to open file: %s", item->outputfilename);
-        delete_ditem(item, 0);
+        delete_ditem(item);
         return 1;
     }
 
@@ -595,7 +591,7 @@ static void write_downloads()
         int speedstrlen;
         int progstrlen;
 
-        if (item->selected) {
+        if (item == sitem) {
             cline = line;
         }
 
@@ -1010,10 +1006,7 @@ static void *do_ncurses(void *unused)
 
                     for (;nsitem; nsitem = nsitem->next) {
                         if (strstr(nsitem->outputfilename, string)) {
-                            if (sitem)
-                                sitem->selected = 0;
                             sitem = nsitem;
-                            sitem->selected = 1;
                             break;
                         }
                     }
@@ -1097,7 +1090,7 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == 'D') {
                 if (sitem) {
-                    sitem = delete_ditem(sitem, 1);
+                    sitem = delete_ditem(sitem);
                     werase(downloads);
                 }
             } else if (c == 'R') {
@@ -1118,10 +1111,7 @@ static void *do_ncurses(void *unused)
 
                     for (;nsitem; nsitem = nsitem->next) {
                         if (strstr(nsitem->outputfilename, last_search)) {
-                            if (sitem)
-                                sitem->selected = 0;
                             sitem = nsitem;
-                            sitem->selected = 1;
                             break;
                         }
                     }
@@ -1132,10 +1122,7 @@ static void *do_ncurses(void *unused)
 
                     for (;nsitem; nsitem = nsitem->prev) {
                         if (strstr(nsitem->outputfilename, last_search)) {
-                            if (sitem)
-                                sitem->selected = 0;
                             sitem = nsitem;
-                            sitem->selected = 1;
                             break;
                         }
                     }
@@ -1174,25 +1161,17 @@ static void *do_ncurses(void *unused)
             } else if (c == KEY_DOWN) {
                 if (!sitem) {
                     sitem = items;
-                    if (sitem)
-                        sitem->selected = 1;
                 } else {
                     if (sitem->next) {
-                        sitem->selected = 0;
                         sitem = sitem->next;
-                        sitem->selected = 1;
                     }
                 }
             } else if (c == KEY_UP) {
                 if (!sitem) {
                     sitem = items;
-                    if (sitem)
-                        sitem->selected = 1;
                 } else {
                     if (sitem->prev) {
-                        sitem->selected = 0;
                         sitem = sitem->prev;
-                        sitem->selected = 1;
                     }
                 }
             } else if (c == KEY_NPAGE) {
@@ -1203,14 +1182,12 @@ static void *do_ncurses(void *unused)
                     if (sitem->next) {
                         int i;
 
-                        sitem->selected = 0;
                         sitem = sitem->next;
                         for (i = 0; i < LINES-1; i++) {
                             if (!sitem->next)
                                 break;
                             sitem = sitem->next;
                         }
-                        sitem->selected = 1;
                     }
                 }
             } else if (c == KEY_PPAGE) {
@@ -1221,14 +1198,12 @@ static void *do_ncurses(void *unused)
                     if (sitem->prev) {
                         int i;
 
-                        sitem->selected = 0;
                         sitem = sitem->prev;
                         for (i = 0; i < LINES-1; i++) {
                             if (!sitem->prev)
                                 break;
                             sitem = sitem->prev;
                         }
-                        sitem->selected = 1;
                     }
                 }
             } else if (c == KEY_RIGHT) {
@@ -1243,15 +1218,11 @@ static void *do_ncurses(void *unused)
                 }
             } else if (c == KEY_HOME) {
                 if (sitem && sitem != items) {
-                    sitem->selected = 0;
                     sitem = items;
-                    sitem->selected = 1;
                 }
             } else if (c == KEY_END) {
                 if (sitem && sitem != items_tail) {
-                    sitem->selected = 0;
                     sitem = items_tail;
-                    sitem->selected = 1;
                 }
             } else if (c == KEY_RESIZE) {
                 delwin(logwin);
@@ -1275,15 +1246,12 @@ static void *do_ncurses(void *unused)
                 int y;
 
                 if (getmouse(&mouse_event) == OK) {
-                    if (sitem)
-                        sitem->selected = 0;
                     sitem = items;
                     for (y = 0; sitem->next; y++) {
                         if (y == ((current_page * (LINES - 1)) + mouse_event.y))
                             break;
                         sitem = sitem->next;
                     }
-                    sitem->selected = 1;
                 }
             }
         }
