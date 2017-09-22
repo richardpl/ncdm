@@ -1210,7 +1210,8 @@ static void *do_ncurses(void *unused)
                     remove_handle(sitem[current_mode]);
                 }
             } else if (c == 'p') {
-                if (sitem[current_mode] && (sitem[current_mode]->mode == MODE_ACTIVE || sitem[current_mode]->mode == MODE_PAUSED)) {
+                if (sitem[current_mode] && (sitem[current_mode]->mode == MODE_ACTIVE ||
+                                            sitem[current_mode]->mode == MODE_PAUSED)) {
                     if (sitem[current_mode]->mode == MODE_ACTIVE) {
                         remove_handle(sitem[current_mode]);
                         paused_downloads++;
@@ -1227,6 +1228,25 @@ static void *do_ncurses(void *unused)
                         if (start_time == INT_MIN)
                             start_time = sitem[current_mode]->start_time;
                     }
+
+                    if (current_mode) {
+                        DownloadItem *temp = sitem[current_mode];
+
+                        for (; sitem[current_mode]; sitem[current_mode] = sitem[current_mode]->next) {
+                            if (sitem[current_mode]->mode == current_mode)
+                                break;
+                        }
+
+                        if (!sitem[current_mode]) {
+                            sitem[current_mode] = temp;
+
+                            for (; sitem[current_mode]; sitem[current_mode] = sitem[current_mode]->prev) {
+                                if (sitem[current_mode]->mode == current_mode)
+                                    break;
+                            }
+                        }
+                    }
+
                 }
             } else if (c == KEY_DOWN) {
                 if (sitem[current_mode] && sitem[current_mode]->next) {
@@ -1315,12 +1335,14 @@ static void *do_ncurses(void *unused)
             } else if (c == KEY_RIGHT) {
                 if (sitem[current_mode]) {
                     sitem[current_mode]->max_speed += 1024;
-                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem[current_mode]->max_speed);
+                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE,
+                                     sitem[current_mode]->max_speed);
                 }
             } else if (c == KEY_LEFT) {
                 if (sitem[current_mode]) {
                     sitem[current_mode]->max_speed = MAX(0, sitem[current_mode]->max_speed - 1024);
-                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE, sitem[current_mode]->max_speed);
+                    curl_easy_setopt(sitem[current_mode]->handle, CURLOPT_MAX_RECV_SPEED_LARGE,
+                                     sitem[current_mode]->max_speed);
                 }
             } else if (c == KEY_HOME) {
                 if (sitem[current_mode]) {
