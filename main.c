@@ -604,6 +604,7 @@ static int create_handle(int overwritefile, const char *newurl,
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, outputfile);
     curl_easy_setopt(handle, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(handle, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(handle, CURLOPT_AUTOREFERER, 1L);
     curl_easy_setopt(handle, CURLOPT_MAX_RECV_SPEED_LARGE, item->max_speed);
     if (referer) {
         rc = curl_easy_setopt(handle, CURLOPT_REFERER, referer);
