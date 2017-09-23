@@ -28,6 +28,7 @@ typedef struct DownloadItem {
     double progress;
     double uprogress;
     int speed;
+    long eta;
     curl_off_t max_speed;
     long int downloaded;
     long int start_time;
@@ -333,6 +334,7 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " Content-length: %.0f ", sitem->contentlength);
     mvwprintw(infowin, i++, 0, " Download size:  %.0f ", sitem->download_size);
     mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
+    mvwprintw(infowin, i++, 0, " ETA: %ld ", sitem->eta);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
     mvwprintw(infowin, i++, 0, " Primary port: %ld ", sitem->primary_port);
     mvwprintw(infowin, i++, 0, " Used Protocol: ");
@@ -380,6 +382,11 @@ static int progressf(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_o
         item->speed = dlnow / tdiff;
     else
         item->speed = 0;
+
+    if (item->speed)
+        item->eta = (dltotal - dlnow) / item->speed;
+    else
+        item->eta = -1;
 
     return 0;
 }
