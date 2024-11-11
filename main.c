@@ -133,7 +133,7 @@ static void write_log(int color, const char *fmt, ...)
     wattrset(logwin, color);
 
     va_start(vl, fmt);
-    vwprintw(logwin, fmt, vl);
+    vw_printw(logwin, fmt, vl);
     va_end(vl);
 
     getyx(logwin, y, x);
@@ -272,7 +272,7 @@ static void write_status(int color, const char *fmt, ...)
     wattrset(statuswin, color);
 
     va_start(vl, fmt);
-    vwprintw(statuswin, fmt, vl);
+    vw_printw(statuswin, fmt, vl);
     va_end(vl);
 
     wnoutrefresh(statuswin);
@@ -426,13 +426,15 @@ static void uninit()
     pthread_cancel(curl_thread);
     pthread_cancel(curses_thread);
 
-    delwin(logwin);
+    clear();
+    refresh();
+    endwin();
     delwin(openwin);
     delwin(infowin);
     delwin(helpwin);
     delwin(statuswin);
+    delwin(logwin);
     delwin(downloads);
-    endwin();
 
     for (;item;)
         item = delete_ditem(item);
@@ -1376,11 +1378,11 @@ static void *do_ncurses(void *unused)
                     sitem[current_mode] = item;
                 }
             } else if (c == KEY_RESIZE) {
-                delwin(logwin);
                 delwin(openwin);
                 delwin(infowin);
                 delwin(helpwin);
                 delwin(statuswin);
+                delwin(logwin);
                 delwin(downloads);
                 clear();
                 refresh();
