@@ -947,7 +947,7 @@ static int multi_timer_cb(CURLM *multi, long timeout_ms, void *unused)
 
         evtimer_add(timerevent, &timeout);
     } else if (timeout_ms == 0) {
-        timer_cb(0, 0, NULL);
+        check_multi_info();
     }
 
     return 0;
