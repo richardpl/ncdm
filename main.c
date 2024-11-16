@@ -328,7 +328,7 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " URL: %.*s ", COLS, sitem->url);
     mvwprintw(infowin, i++, 0, " Effective URL: %.*s ", COLS, sitem->effective_url);
     mvwprintw(infowin, i++, 0, " Current download speed: %ldB/s ", sitem->speed);
-    mvwprintw(infowin, i++, 0, " Max download speed: %ldB/s ", sitem->max_speed);
+    mvwprintw(infowin, i++, 0, " Max allowed download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
     mvwprintw(infowin, i++, 0, " Content-type: %s ", sitem->contenttype);
     mvwprintw(infowin, i++, 0, " Content-length: %.0f ", sitem->contentlength);
