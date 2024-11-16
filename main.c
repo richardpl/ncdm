@@ -19,7 +19,7 @@ typedef struct DownloadItem {
     char *primary_ip;
     long primary_port;
     long rcode;
-    long protocol;
+    char *protocol;
     double contentlength;
     double download_size;
     FILE *outputfile;
@@ -316,7 +316,7 @@ static void write_infowin(DownloadItem *sitem)
 
     curl_easy_getinfo(sitem->handle, CURLINFO_EFFECTIVE_URL, &sitem->effective_url);
     curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
-    curl_easy_getinfo(sitem->handle, CURLINFO_PROTOCOL, &sitem->protocol);
+    curl_easy_getinfo(sitem->handle, CURLINFO_SCHEME, &sitem->protocol);
     curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_TYPE, &sitem->contenttype);
     curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
     curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
@@ -337,19 +337,7 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " ETA: %ld ", sitem->eta);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
     mvwprintw(infowin, i++, 0, " Primary port: %ld ", sitem->primary_port);
-    mvwprintw(infowin, i++, 0, " Used Protocol: ");
-    switch (sitem->protocol) {
-    case CURLPROTO_HTTP:   waddstr(infowin, "HTTP");   break;
-    case CURLPROTO_HTTPS:  waddstr(infowin, "HTTPS");  break;
-    case CURLPROTO_FTP:    waddstr(infowin, "FTP");    break;
-    case CURLPROTO_FTPS:   waddstr(infowin, "FTPS");   break;
-    case CURLPROTO_SCP:    waddstr(infowin, "SCP");    break;
-    case CURLPROTO_SFTP:   waddstr(infowin, "SFTP");   break;
-    case CURLPROTO_FILE:   waddstr(infowin, "FILE");   break;
-    case CURLPROTO_TFTP:   waddstr(infowin, "TFTP");   break;
-    case CURLPROTO_TELNET: waddstr(infowin, "TELNET"); break;
-    default:               waddstr(infowin, "unknown");
-    }
+    mvwprintw(infowin, i++, 0, " Used Protocol: %s ", sitem->protocol);
 
     wnoutrefresh(infowin);
 }
