@@ -826,6 +826,8 @@ static int parse_file(char *filename)
         create_handle(0, string, NULL, NULL, 0);
     }
 
+    fclose(file);
+
     return 0;
 }
 
