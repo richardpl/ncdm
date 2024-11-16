@@ -27,7 +27,7 @@ typedef struct DownloadItem {
     char *contenttype;
     double progress;
     double uprogress;
-    int speed;
+    long int speed;
     long eta;
     curl_off_t max_speed;
     long int downloaded;
