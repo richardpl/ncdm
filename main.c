@@ -20,8 +20,8 @@ typedef struct DownloadItem {
     long primary_port;
     long rcode;
     char *protocol;
-    double contentlength;
-    double download_size;
+    curl_off_t contentlength;
+    curl_off_t download_size;
     FILE *outputfile;
     char *outputfilename;
     char *contenttype;
@@ -318,8 +318,8 @@ static void write_infowin(DownloadItem *sitem)
     curl_easy_getinfo(sitem->handle, CURLINFO_RESPONSE_CODE, &sitem->rcode);
     curl_easy_getinfo(sitem->handle, CURLINFO_SCHEME, &sitem->protocol);
     curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_TYPE, &sitem->contenttype);
-    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &sitem->contentlength);
-    curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD, &sitem->download_size);
+    curl_easy_getinfo(sitem->handle, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &sitem->contentlength);
+    curl_easy_getinfo(sitem->handle, CURLINFO_SIZE_DOWNLOAD_T, &sitem->download_size);
     curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_IP, &sitem->primary_ip);
     curl_easy_getinfo(sitem->handle, CURLINFO_PRIMARY_PORT, &sitem->primary_port);
 
@@ -331,8 +331,8 @@ static void write_infowin(DownloadItem *sitem)
     mvwprintw(infowin, i++, 0, " Max allowed download speed: %ldB/s ", sitem->max_speed);
     mvwprintw(infowin, i++, 0, " Response code: %ld ", sitem->rcode);
     mvwprintw(infowin, i++, 0, " Content-type: %s ", sitem->contenttype);
-    mvwprintw(infowin, i++, 0, " Content-length: %.0f ", sitem->contentlength);
-    mvwprintw(infowin, i++, 0, " Download size:  %.0f ", sitem->download_size);
+    mvwprintw(infowin, i++, 0, " Content-length: %ld ", sitem->contentlength);
+    mvwprintw(infowin, i++, 0, " Download size:  %ld ", sitem->download_size);
     mvwprintw(infowin, i++, 0, " Download time: %ld ", sitem->start_time ? ((sitem->end_time ? sitem->end_time : time(NULL)) - sitem->start_time) : 0);
     mvwprintw(infowin, i++, 0, " ETA: %ld ", sitem->eta);
     mvwprintw(infowin, i++, 0, " Primary IP: %s ", sitem->primary_ip);
