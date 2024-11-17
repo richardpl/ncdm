@@ -1205,6 +1205,7 @@ static void *do_ncurses(void *unused)
                 if (sitem[current_mode] && sitem[current_mode]->mode != MODE_INACTIVE) {
                     if (sitem[current_mode]->mode == MODE_ACTIVE) {
                         active_downloads--;
+                        remove_handle(sitem[current_mode]);
                     } else if (sitem[current_mode]->mode == MODE_FINISHED) {
                         finished_downloads--;
                     } else if (sitem[current_mode]->mode == MODE_PAUSED) {
@@ -1212,7 +1213,6 @@ static void *do_ncurses(void *unused)
                     }
                     sitem[current_mode]->mode = MODE_INACTIVE;
                     inactive_downloads++;
-                    remove_handle(sitem[current_mode]);
                 }
             } else if (c == 'p') {
                 if (sitem[current_mode] && (sitem[current_mode]->mode == MODE_ACTIVE ||
