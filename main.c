@@ -158,11 +158,10 @@ static void check_mrc(const char *where, CURLMcode code)
 
 static DownloadItem* delete_ditem(DownloadItem *ditem)
 {
-    int i;
-
-    for (i = 0; i < NB_MODES; i++) {
+    for (int i = 0; i < NB_MODES; i++) {
         if (ditem == sitem[i]) {
             sitem[i] = NULL;
+            nb_ditems--;
         }
     }
 
@@ -188,7 +187,6 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
     if (ditem->outputfilename)
         free(ditem->outputfilename);
 
-    nb_ditems--;
     if (ditem->mode == MODE_INACTIVE) {
         inactive_downloads--;
     } else if (ditem->mode == MODE_PAUSED) {
@@ -259,6 +257,7 @@ static DownloadItem* delete_ditem(DownloadItem *ditem)
     } else {
         free(ditem);
         items = ditem = items_tail = NULL;
+        nb_ditems = 0;
     }
 
     return ditem;
@@ -493,6 +492,7 @@ static int create_handle(int overwritefile, const char *newurl,
             return 1;
         }
         item = items_tail = items;
+        nb_ditems = 1;
     } else {
         DownloadItem *prev;
 
@@ -506,6 +506,7 @@ static int create_handle(int overwritefile, const char *newurl,
         prev = item;
         item = items_tail = item->next;
         item->prev = prev;
+        nb_ditems++;
     }
 
     item->url = clonestring(newurl, urllen);
@@ -617,7 +618,6 @@ static int create_handle(int overwritefile, const char *newurl,
     }
     item->mode = MODE_PAUSED;
     paused_downloads++;
-    nb_ditems++;
 
     return 0;
 }
